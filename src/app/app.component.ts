@@ -51,16 +51,16 @@ export class AppComponent implements OnInit, OnDestroy {
         id: 1,
         name: 'P1',
         arrivalTime: 0,
-        burstTime: 8,
+        burstTime: 10,
         priority: 3,
         ioBurstTime: 2,
-        ioStartTime: 4,
+        ioStartTime: 5,
         color: '#ef4444',
       },
       {
         id: 2,
         name: 'P2',
-        arrivalTime: 2,
+        arrivalTime: 1,
         burstTime: 4,
         priority: 1,
         ioBurstTime: 0,
@@ -70,8 +70,8 @@ export class AppComponent implements OnInit, OnDestroy {
       {
         id: 3,
         name: 'P3',
-        arrivalTime: 4,
-        burstTime: 5,
+        arrivalTime: 3,
+        burstTime: 6,
         priority: 4,
         ioBurstTime: 3,
         ioStartTime: 2,
@@ -80,8 +80,8 @@ export class AppComponent implements OnInit, OnDestroy {
       {
         id: 4,
         name: 'P4',
-        arrivalTime: 6,
-        burstTime: 6,
+        arrivalTime: 5,
+        burstTime: 8,
         priority: 2,
         ioBurstTime: 0,
         ioStartTime: -1,
@@ -226,16 +226,22 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentSnapshot(): ReadyQueueSnapshot | null {
     if (!this.schedulingResult) return null;
-    const idx = Math.min(
-      this.currentTime,
-      this.schedulingResult.readyQueueHistory.length - 1
-    );
-    return this.schedulingResult.readyQueueHistory[idx] ?? null;
+    const history = this.schedulingResult.readyQueueHistory;
+    if (history.length === 0) return null;
+    let best = history[0];
+    for (const snap of history) {
+      if (snap.time <= this.currentTime) {
+        best = snap;
+      } else {
+        break;
+      }
+    }
+    return best;
   }
 
   get currentEvents(): EventLog[] {
     if (!this.schedulingResult) return [];
-    return this.schedulingResult.events.filter((e) => e.time <= this.currentTime);
+    return this.schedulingResult.events;
   }
 
   get currentGantt(): GanttBlock[] {

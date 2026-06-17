@@ -95,10 +95,8 @@
         <div
           *ngFor="let event of getEventsUpToCurrentTime(); let i = index"
           class="event-item"
-          [ngClass]="[
-            'event-' + getEventType(event),
-            { 'event-latest': isLatestEvent(i) && animationMode }
-          ]"
+          [ngClass]="'event-' + getEventType(event)"
+          [class.event-latest]="isLatestEvent(i) && animationMode"
         >
           <span class="event-time">[时刻{{ event.time }}]</span>
           <span class="event-message">{{ event.message }}</span>
