@@ -1,0 +1,104 @@
+<div class="algorithm-selector" [formGroup]="form">
+  <div class="selector-header">
+    <h2>调度算法配置</h2>
+    <label class="compare-mode-toggle">
+      <input
+        type="checkbox"
+        [checked]="compareMode"
+        (change)="onCompareModeToggle()"
+      />
+      <span>算法对比模式</span>
+    </label>
+  </div>
+
+  <div class="form-body">
+    <div class="form-group">
+      <label for="algorithm">调度算法</label>
+      <select
+        id="algorithm"
+        formControlName="algorithm"
+        [disabled]="compareMode"
+        class="form-control"
+      >
+        <option *ngFor="let opt of algorithmOptions" [value]="opt.value">
+          {{ opt.label }} - {{ opt.description }}
+        </option>
+      </select>
+    </div>
+
+    <div *ngIf="!compareMode" class="dynamic-params">
+      <div *ngIf="isPrioritySelected" class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" formControlName="priorityPreemptive" />
+          <span>抢占模式</span>
+        </label>
+        <p class="param-hint">
+          {{ form.get('priorityPreemptive')?.value ? '抢占式优先级调度 (PRIORITY_P)' : '非抢占式优先级调度 (PRIORITY_NP)' }}
+        </p>
+      </div>
+
+      <div *ngIf="isRRSelected" class="form-group">
+        <label for="timeQuantum">时间片大小 (1-20)</label>
+        <input
+          id="timeQuantum"
+          type="number"
+          formControlName="timeQuantum"
+          min="1"
+          max="20"
+          class="form-control"
+        />
+        <p class="param-hint">当前时间片: {{ form.get('timeQuantum')?.value }}</p>
+      </div>
+
+      <div *ngIf="isMLFQSelected" class="form-group mlfq-info">
+        <div class="info-card">
+          <h4>多级反馈队列配置</h4>
+          <ul>
+            <li>队列数量: <strong>3</strong></li>
+            <li>Q1 (最高优先级): 时间片 = <strong>2</strong></li>
+            <li>Q2: 时间片 = <strong>4</strong></li>
+            <li>Q3 (最低优先级): 时间片 = <strong>8</strong></li>
+          </ul>
+          <p class="param-hint">
+            新进程进入 Q1，若未完成则降级到下一队列
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="compareMode" class="compare-mode-info">
+      <div class="info-card info-card-compare">
+        <h4>算法对比模式已启用</h4>
+        <p>将运行以下所有算法进行对比：</p>
+        <ul>
+          <li>FCFS - 先来先服务</li>
+          <li>SJF - 短作业优先</li>
+          <li>SRTF - 最短剩余时间优先</li>
+          <li>PRIORITY_NP - 非抢占优先级</li>
+          <li>PRIORITY_P - 抢占优先级</li>
+          <li>RR (q=4) - 时间片轮转</li>
+          <li>MLFQ - 多级反馈队列</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="action-buttons">
+    <button
+      *ngIf="!compareMode"
+      type="button"
+      class="btn btn-primary"
+      (click)="onRunSimulation()"
+    >
+      运行模拟
+    </button>
+    <button
+      *ngIf="compareMode"
+      type="button"
+      class="btn btn-primary btn-wide"
+      (click)="onRunAllSimulation()"
+    >
+      运行全部算法对比
+    </button>
+  </div>
+</div>

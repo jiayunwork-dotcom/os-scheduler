@@ -1,0 +1,83 @@
+<div class="gantt-container">
+  <div class="gantt-scroll-wrapper">
+    <div class="gantt-main">
+      <div class="gantt-label-column">
+        <div class="gantt-time-axis-spacer"></div>
+        <div class="gantt-label">CPU</div>
+        @for (process of processes; track process.id) {
+          <div class="gantt-label process-label">
+            <span class="process-color-dot" [style.backgroundColor]="process.color"></span>
+            <span class="process-name">{{ process.name }}</span>
+          </div>
+        }
+      </div>
+
+      <div class="gantt-chart-area">
+        <div class="gantt-time-axis" [style.width.px]="chartWidth">
+          @for (tick of getTimeAxisTicks(); track tick) {
+            <div class="time-tick" [style.left.px]="tick * TIME_UNIT_WIDTH">
+              <span class="time-label">{{ tick }}</span>
+            </div>
+          }
+        </div>
+
+        <div class="gantt-cpu-row" [style.width.px]="chartWidth">
+          @for (block of ganttChart; track block.startTime + '-' + block.endTime) {
+            @if (isBlockVisible(block)) {
+              <div
+                class="gantt-block"
+                [style.left.px]="getBlockLeft(block)"
+                [style.width.px]="getBlockWidth(block)"
+                [style.backgroundColor]="block.isIdle ? '#ccc' : getProcessColor(block.processId)"
+                [class.idle-block]="block.isIdle"
+              >
+                <span class="block-label">{{ getProcessName(block.processId) }}</span>
+              </div>
+            }
+          }
+          @if (animationMode && currentTime >= 0) {
+            <div class="current-time-line" [style.left.px]="currentTime * TIME_UNIT_WIDTH"></div>
+          }
+        </div>
+
+        @for (process of processes; track process.id) {
+          <div class="gantt-process-row" [style.width.px]="chartWidth">
+            @if (getProcessResult(process.id)?.timeline) {
+              @for (segment of getProcessResult(process.id)!.timeline; track segment.start + '-' + segment.end + '-' + segment.type) {
+                @if (isSegmentVisible(segment)) {
+                  @if (segment.type === 'arrival') {
+                    <div
+                      class="timeline-marker arrival-marker"
+                      [style.left.px]="getSegmentLeft(segment)"
+                      [title]="'到达: ' + segment.start"
+                    ></div>
+                  } @else if (segment.type === 'completion') {
+                    <div
+                      class="timeline-marker completion-marker"
+                      [style.left.px]="getSegmentLeft(segment)"
+                    >
+                      <span class="completion-label">{{ getCompletionTimeLabel(segment) }}</span>
+                    </div>
+                  } @else {
+                    <div
+                      class="timeline-segment"
+                      [style.left.px]="getSegmentLeft(segment)"
+                      [style.width.px]="getSegmentWidth(segment)"
+                      [style.backgroundColor]="getSegmentColor(segment, process.id)"
+                      [class.segment-waiting]="segment.type === 'waiting'"
+                      [class.segment-execution]="segment.type === 'execution'"
+                      [class.segment-io]="segment.type === 'io'"
+                    ></div>
+                  }
+                }
+              }
+            }
+            @if (animationMode && currentTime >= 0) {
+              <div class="current-time-line" [style.left.px]="currentTime * TIME_UNIT_WIDTH"></div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>

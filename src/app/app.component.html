@@ -1,0 +1,99 @@
+<div class="container">
+  <header class="page-header">
+    <h1>🖥️ 操作系统进程调度算法模拟器</h1>
+    <p>交互式学习工具 · 支持FCFS/SJF/SRTF/优先级/RR/MLFQ六种算法 · 实时甘特图与性能指标对比</p>
+  </header>
+
+  <div class="section-grid">
+    <app-process-config
+      [processes]="processes"
+      (processesChange)="onProcessesChange($event)"
+    ></app-process-config>
+
+    <app-algorithm-selector
+      [config]="config"
+      (configChange)="onConfigChange($event)"
+      [compareMode]="compareMode"
+      (compareModeChange)="onCompareModeChange($event)"
+      (runSimulation)="runSimulation()"
+      (runAllSimulation)="runAllSimulation()"
+    ></app-algorithm-selector>
+  </div>
+
+  <ng-container *ngIf="schedulingResult && !compareMode">
+    <div class="card">
+      <app-animation-controls
+        [totalTime]="totalTime"
+        [currentTime]="currentTime"
+        [isPlaying]="isPlaying"
+        [speed]="speed"
+        [mode]="mode"
+        (modeChange)="onModeChange($event)"
+        (play)="onPlay()"
+        (pause)="onPause()"
+        (stepForward)="onStepForward()"
+        (stepBackward)="onStepBackward()"
+        (reset)="onReset()"
+        (seekTo)="onSeekTo($event)"
+        (speedChange)="onSpeedChange($event)"
+      ></app-animation-controls>
+    </div>
+
+    <div class="main-grid">
+      <div class="left-col">
+        <div class="card">
+          <div class="card-title">📊 甘特图 & 进程时间线</div>
+          <app-gantt-chart
+            [ganttChart]="currentGantt"
+            [processes]="processes"
+            [processResults]="currentProcessResults"
+            [currentTime]="currentTime"
+            [animationMode]="mode === 'animation'"
+          ></app-gantt-chart>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📈 性能指标</div>
+          <app-metrics-panel
+            [result]="schedulingResult"
+            [processes]="processes"
+            [compareResults]="null"
+            [compareMode]="false"
+          ></app-metrics-panel>
+        </div>
+      </div>
+
+      <div class="right-col">
+        <app-ready-queue
+          [snapshot]="currentSnapshot"
+          [processes]="processes"
+          [events]="currentEvents"
+          [currentTime]="currentTime"
+          [isMlfq]="isMlfq"
+          [animationMode]="mode === 'animation'"
+        ></app-ready-queue>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="compareResults && compareMode">
+    <div class="card">
+      <div class="card-title">🏆 算法对比结果</div>
+      <app-metrics-panel
+        [result]="null"
+        [processes]="processes"
+        [compareResults]="compareResults"
+        [compareMode]="true"
+      ></app-metrics-panel>
+    </div>
+  </ng-container>
+
+  <ng-container *ngIf="!schedulingResult && !compareResults">
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-state-icon">⚙️</div>
+        <div>请配置进程和算法，点击"运行模拟"开始演示</div>
+      </div>
+    </div>
+  </ng-container>
+</div>

@@ -1,0 +1,112 @@
+<div class="ready-queue-container">
+  <div class="left-panel">
+    <div class="section current-process-section">
+      <h3 class="section-title">当前执行</h3>
+      <div class="current-process-box">
+        <ng-container *ngIf="getCurrentProcessId() !== null; else idleTemplate">
+          <div
+            class="process-block large"
+            [ngClass]="{ 'animate-highlight': animationMode }"
+            [style.backgroundColor]="getProcessColor(getCurrentProcessId()!)"
+          >
+            <span class="process-label">{{ getProcessName(getCurrentProcessId()!) }}</span>
+          </div>
+        </ng-container>
+        <ng-template #idleTemplate>
+          <div class="process-block large idle-block">
+            <span class="process-label">CPU空闲</span>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+
+    <div class="section queues-section">
+      <ng-container *ngIf="!isMlfq; else mlfqTemplate">
+        <h3 class="section-title">就绪队列</h3>
+        <div class="queue-container">
+          <div class="queue-direction-label">队首 →</div>
+          <div class="queue-list">
+            <ng-container *ngIf="getReadyQueue().length > 0; else emptyQueueTemplate">
+              <div
+                *ngFor="let pid of getReadyQueue(); let first = first"
+                class="process-item-wrapper"
+              >
+                <div
+                  class="process-block small"
+                  [ngClass]="{ 'animate-highlight': animationMode && first }"
+                  [style.backgroundColor]="getProcessColor(pid)"
+                >
+                  <span class="process-label-small">P{{ pid }}</span>
+                </div>
+                <div class="queue-arrow" *ngIf="!first">←</div>
+              </div>
+            </ng-container>
+            <ng-template #emptyQueueTemplate>
+              <span class="empty-queue-text">（空）</span>
+            </ng-template>
+          </div>
+        </div>
+      </ng-container>
+
+      <ng-template #mlfqTemplate>
+        <div class="mlfq-queues">
+          <div
+            *ngFor="let quantum of mlfqQuantums; let i = index"
+            class="mlfq-queue-wrapper"
+            [style.borderColor]="mlfqBorderColors[i]"
+            [style.backgroundColor]="mlfqBgColors[i]"
+          >
+            <h3 class="section-title mlfq-title" [style.color]="mlfqBorderColors[i]">
+              第{{ i + 1 }}级队列 (时间片={{ quantum }})
+            </h3>
+            <div class="queue-container">
+              <div class="queue-direction-label">队首 →</div>
+              <div class="queue-list">
+                <ng-container *ngIf="getMlfqQueue(i).length > 0; else mlfqEmptyTemplate">
+                  <div
+                    *ngFor="let pid of getMlfqQueue(i); let first = first"
+                    class="process-item-wrapper"
+                  >
+                    <div
+                      class="process-block small"
+                      [ngClass]="{ 'animate-highlight': animationMode && first }"
+                      [style.backgroundColor]="getProcessColor(pid)"
+                    >
+                      <span class="process-label-small">P{{ pid }}</span>
+                    </div>
+                    <div class="queue-arrow" *ngIf="!first">←</div>
+                  </div>
+                </ng-container>
+                <ng-template #mlfqEmptyTemplate>
+                  <span class="empty-queue-text">（空）</span>
+                </ng-template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ng-template>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="section events-section">
+      <h3 class="section-title">事件日志</h3>
+      <div class="events-container" #eventsContainer>
+        <div
+          *ngFor="let event of getEventsUpToCurrentTime(); let i = index"
+          class="event-item"
+          [ngClass]="[
+            'event-' + getEventType(event),
+            { 'event-latest': isLatestEvent(i) && animationMode }
+          ]"
+        >
+          <span class="event-time">[时刻{{ event.time }}]</span>
+          <span class="event-message">{{ event.message }}</span>
+        </div>
+        <div *ngIf="getEventsUpToCurrentTime().length === 0" class="no-events">
+          暂无事件日志
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,106 @@
+<div class="process-config">
+  <h2 class="title">进程配置</h2>
+
+  <div class="form-section" [formGroup]="processForm">
+    <div class="form-grid">
+      <div class="form-field">
+        <label>到达时间</label>
+        <input type="number" formControlName="arrivalTime" min="0" />
+        <div *ngIf="arrivalTimeControl?.invalid && arrivalTimeControl?.touched" class="error-msg">
+          到达时间必须 >= 0
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>CPU Burst时间</label>
+        <input type="number" formControlName="burstTime" min="0" />
+        <div *ngIf="burstTimeControl?.invalid && burstTimeControl?.touched" class="error-msg">
+          Burst时间必须 >= 0
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>优先级</label>
+        <input type="number" formControlName="priority" min="1" />
+        <div *ngIf="priorityControl?.invalid && priorityControl?.touched" class="error-msg">
+          优先级必须 >= 1
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>IO Burst时间</label>
+        <input type="number" formControlName="ioBurstTime" min="0" />
+        <div *ngIf="ioBurstTimeControl?.invalid && ioBurstTimeControl?.touched" class="error-msg">
+          IO Burst时间必须 >= 0
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>IO发生时机</label>
+        <input type="number" formControlName="ioStartTime" min="-1" />
+        <div *ngIf="ioStartTimeControl?.invalid && ioStartTimeControl?.touched" class="error-msg">
+          IO时机必须 >= -1
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="processForm.errors?.['ioStartTimeRequired']" class="error-msg form-error">
+      有IO Burst时，IO发生时机不能为空（必须 >= 0）
+    </div>
+    <div *ngIf="processForm.errors?.['ioStartTimeInvalid']" class="error-msg form-error">
+      IO发生时机必须小于 CPU Burst 时间
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" (click)="addProcess()" [disabled]="processForm.invalid">
+        添加进程
+      </button>
+      <button class="btn btn-secondary" (click)="generateRandom()">
+        随机生成
+      </button>
+      <button class="btn btn-danger" (click)="clearAll()">
+        全部清空
+      </button>
+    </div>
+  </div>
+
+  <div class="table-section">
+    <h3 class="subtitle">进程列表 ({{ processes.length }})</h3>
+    <div *ngIf="processes.length === 0" class="empty-state">
+      暂无进程，请添加或随机生成进程
+    </div>
+
+    <table *ngIf="processes.length > 0" class="process-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>到达时间</th>
+          <th>CPU Burst</th>
+          <th>优先级</th>
+          <th>IO Burst</th>
+          <th>IO时机</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let process of processes">
+          <td>
+            <span class="process-id" [style.backgroundColor]="process.color">
+              {{ process.name }}
+            </span>
+          </td>
+          <td>{{ process.arrivalTime }}</td>
+          <td>{{ process.burstTime }}</td>
+          <td>{{ process.priority }}</td>
+          <td>{{ process.ioBurstTime }}</td>
+          <td>{{ process.ioStartTime === -1 ? '-' : process.ioStartTime }}</td>
+          <td>
+            <button class="btn btn-small btn-delete" (click)="removeProcess(process.id)">
+              删除
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -1,0 +1,167 @@
+<div class="metrics-panel">
+  <ng-container *ngIf="!compareMode; else compareModeTemplate">
+    <ng-container *ngIf="result">
+      <div class="section-title">进程指标</div>
+      <div class="table-container">
+        <table class="metrics-table">
+          <thead>
+            <tr>
+              <th>进程ID</th>
+              <th>周转时间</th>
+              <th>等待时间</th>
+              <th>响应时间</th>
+              <th>开始时间</th>
+              <th>完成时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let pr of result.processResults">
+              <td>
+                <span class="process-id-badge" [style.backgroundColor]="getProcessColor(pr.processId)">
+                  P{{ pr.processId }}
+                </span>
+              </td>
+              <td>{{ formatNumber(pr.turnaroundTime) }}</td>
+              <td>{{ formatNumber(pr.waitingTime) }}</td>
+              <td>{{ formatNumber(pr.responseTime) }}</td>
+              <td>{{ formatNumber(pr.startTime) }}</td>
+              <td>{{ formatNumber(pr.completionTime) }}</td>
+            </tr>
+            <tr class="average-row">
+              <td><strong>平均值</strong></td>
+              <td><strong>{{ formatNumber(getAverageRow(result.processResults).turnaroundTime) }}</strong></td>
+              <td><strong>{{ formatNumber(getAverageRow(result.processResults).waitingTime) }}</strong></td>
+              <td><strong>{{ formatNumber(getAverageRow(result.processResults).responseTime) }}</strong></td>
+              <td><strong>{{ formatNumber(getAverageRow(result.processResults).startTime) }}</strong></td>
+              <td><strong>{{ formatNumber(getAverageRow(result.processResults).completionTime) }}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-title">全局指标</div>
+      <div class="cards-grid">
+        <div class="metric-card cpu-card">
+          <div class="card-label">CPU利用率</div>
+          <div class="card-value">{{ formatPercent(result.cpuUtilization) }}</div>
+          <div class="progress-bar">
+            <div class="progress-fill" [style.width.%]="(result.cpuUtilization * 100)"></div>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="card-label">吞吐量</div>
+          <div class="card-value">{{ formatNumber(result.throughput) }} 个/单位时间</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="card-label">平均周转时间</div>
+          <div class="card-value">{{ formatNumber(result.avgTurnaroundTime) }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="card-label">平均等待时间</div>
+          <div class="card-value">{{ formatNumber(result.avgWaitingTime) }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="card-label">平均响应时间</div>
+          <div class="card-value">{{ formatNumber(result.avgResponseTime) }}</div>
+        </div>
+
+        <div class="metric-card">
+          <div class="card-label">总运行时间</div>
+          <div class="card-value">{{ formatNumber(result.totalTime) }} 时间单位</div>
+        </div>
+      </div>
+    </ng-container>
+  </ng-container>
+
+  <ng-template #compareModeTemplate>
+    <ng-container *ngIf="compareResults && compareResults.length > 0">
+      <div class="section-title">算法对比图表</div>
+      <div class="charts-grid">
+        <div class="chart-container">
+          <div class="chart-title">平均等待时间</div>
+          <div class="bar-chart">
+            <div class="bars-wrapper">
+              <div class="bar-item" *ngFor="let item of compareResults; let i = index">
+                <div class="bar-value">{{ formatNumber(item.result.avgWaitingTime) }}</div>
+                <div
+                  class="bar"
+                  [style.backgroundColor]="getBarColor(i)"
+                  [style.height.%]="getBarHeight(item.result.avgWaitingTime, getMaxAvgWaitingTime())"
+                ></div>
+                <div class="bar-label">{{ item.name }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-title">平均周转时间</div>
+          <div class="bar-chart">
+            <div class="bars-wrapper">
+              <div class="bar-item" *ngFor="let item of compareResults; let i = index">
+                <div class="bar-value">{{ formatNumber(item.result.avgTurnaroundTime) }}</div>
+                <div
+                  class="bar"
+                  [style.backgroundColor]="getBarColor(i)"
+                  [style.height.%]="getBarHeight(item.result.avgTurnaroundTime, getMaxAvgTurnaroundTime())"
+                ></div>
+                <div class="bar-label">{{ item.name }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-title">CPU利用率</div>
+          <div class="bar-chart">
+            <div class="bars-wrapper">
+              <div class="bar-item" *ngFor="let item of compareResults; let i = index">
+                <div class="bar-value">{{ formatPercent(item.result.cpuUtilization) }}</div>
+                <div
+                  class="bar"
+                  [style.backgroundColor]="getBarColor(i)"
+                  [style.height.%]="(item.result.cpuUtilization * 100)"
+                ></div>
+                <div class="bar-label">{{ item.name }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">对比数据详情</div>
+      <div class="table-container">
+        <table class="metrics-table compare-table">
+          <thead>
+            <tr>
+              <th>算法</th>
+              <th>平均周转时间</th>
+              <th>平均等待时间</th>
+              <th>平均响应时间</th>
+              <th>CPU利用率</th>
+              <th>吞吐量</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of compareResults; let i = index">
+              <td>
+                <span class="algo-badge" [style.backgroundColor]="getBarColor(i)">
+                  {{ item.name }}
+                </span>
+              </td>
+              <td [class.best-value]="isBestTurnaround(i)">{{ formatNumber(item.result.avgTurnaroundTime) }}</td>
+              <td [class.best-value]="isBestWaiting(i)">{{ formatNumber(item.result.avgWaitingTime) }}</td>
+              <td [class.best-value]="isBestResponse(i)">{{ formatNumber(item.result.avgResponseTime) }}</td>
+              <td [class.best-value]="isBestCpu(i)">{{ formatPercent(item.result.cpuUtilization) }}</td>
+              <td [class.best-value]="isBestThroughput(i)">{{ formatNumber(item.result.throughput) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-container>
+  </ng-template>
+</div>

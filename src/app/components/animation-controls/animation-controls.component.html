@@ -1,0 +1,105 @@
+<div class="animation-controls">
+  <div class="mode-switch">
+    <label class="mode-label">播放模式：</label>
+    <div class="radio-group">
+      <label class="radio-option">
+        <input
+          type="radio"
+          name="mode"
+          value="instant"
+          [checked]="mode === 'instant'"
+          (change)="onModeChange('instant')"
+        />
+        <span>一步到位</span>
+      </label>
+      <label class="radio-option">
+        <input
+          type="radio"
+          name="mode"
+          value="animation"
+          [checked]="mode === 'animation'"
+          (change)="onModeChange('animation')"
+        />
+        <span>逐步动画</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="controls-row" *ngIf="mode === 'animation'">
+    <div class="control-buttons">
+      <button
+        class="control-btn"
+        (click)="onReset()"
+        [disabled]="totalTime === 0 || currentTime === 0"
+        title="重置"
+      >
+        <span class="btn-icon">|&lt;</span>
+      </button>
+      <button
+        class="control-btn"
+        (click)="onStepBackward()"
+        [disabled]="totalTime === 0 || currentTime <= 0 || isPlaying"
+        title="后退一步"
+      >
+        <span class="btn-icon">&lt;&lt;</span>
+      </button>
+      <button
+        class="control-btn play-btn"
+        (click)="onPlayPause()"
+        [disabled]="totalTime === 0 || currentTime >= totalTime"
+        [class.playing]="isPlaying"
+        title="{{ isPlaying ? '暂停' : '播放' }}"
+      >
+        <span class="btn-icon" *ngIf="!isPlaying">▶</span>
+        <span class="btn-icon" *ngIf="isPlaying">⏸</span>
+      </button>
+      <button
+        class="control-btn"
+        (click)="onStepForward()"
+        [disabled]="totalTime === 0 || currentTime >= totalTime || isPlaying"
+        title="前进一步"
+      >
+        <span class="btn-icon">&gt;&gt;</span>
+      </button>
+    </div>
+
+    <div class="time-display">
+      <span class="current-time">{{ currentTime }}</span>
+      <span class="time-separator">/</span>
+      <span class="total-time">{{ totalTime }}</span>
+    </div>
+  </div>
+
+  <div class="slider-row">
+    <span class="slider-label">时刻</span>
+    <input
+      type="range"
+      class="progress-slider"
+      [min]="0"
+      [max]="totalTime || 0"
+      [value]="currentTime"
+      (input)="onSeekTo($event)"
+      [disabled]="totalTime === 0"
+    />
+    <span class="slider-value">{{ currentTime }}</span>
+  </div>
+
+  <div class="speed-control">
+    <label class="speed-label">播放速度：</label>
+    <div class="speed-buttons">
+      <button
+        *ngFor="let speedOption of speedOptions"
+        class="speed-btn"
+        [class.active]="speed === speedOption"
+        [disabled]="mode !== 'animation'"
+        (click)="onSpeedChange(speedOption)"
+      >
+        {{ speedOption }}x
+      </button>
+    </div>
+  </div>
+
+  <div class="time-display-bottom">
+    时刻 {{ currentTime }} / 总时长 {{ totalTime }}
+  </div>
+</div>
