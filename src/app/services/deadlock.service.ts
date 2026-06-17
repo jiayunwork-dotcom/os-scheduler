@@ -209,7 +209,7 @@ export class DeadlockService {
       label: `P${p.processId}`,
       isDeadlocked: false,
     }));
-    const resourceNodes = resources.map((r, i) => ({
+    const resourceNodes = resources.map((r) => ({
       id: r.id,
       label: r.name,
       isInCycle: false,
@@ -230,7 +230,6 @@ export class DeadlockService {
     }
 
     const need = this.getNeed(processes);
-    const available = this.getAvailable(resources, processes);
     for (let i = 0; i < processes.length; i++) {
       const p = processes[i];
       for (let j = 0; j < resources.length; j++) {
@@ -245,88 +244,105 @@ export class DeadlockService {
       }
     }
 
-    const adjacencyMap = new Map<string, string[]>();
-    for (const edge of edges) {
-      if (!adjacencyMap.has(edge.from)) {
-        adjacencyMap.set(edge.from, []);
-      }
-      adjacencyMap.get(edge.from)!.push(edge.to);
-    }
+    const n = processes.length;
+    const m = resources.length;
+    const work = this.getAvailable(resources, processes);
+    const finish: boolean[] = new Array(n).fill(false);
 
-    const visited = new Set<string>();
-    const recStack = new Set<string>();
-    const cycleEdges: string[] = [];
-    const cycleNodes: string[] = [];
-    let foundCycle = false;
-
-    const dfs = (node: string, path: string[]): boolean => {
-      if (foundCycle) return false;
-      visited.add(node);
-      recStack.add(node);
-      path.push(node);
-
-      const neighbors = adjacencyMap.get(node) || [];
-      for (const neighbor of neighbors) {
-        if (!visited.has(neighbor)) {
-          if (dfs(neighbor, path)) {
-            return true;
+    let found = true;
+    while (found) {
+      found = false;
+      for (let i = 0; i < n; i++) {
+        if (!finish[i]) {
+          let canAllocate = true;
+          for (let j = 0; j < m; j++) {
+            if (need[i][j] > work[j]) {
+              canAllocate = false;
+              break;
+            }
           }
-        } else if (recStack.has(neighbor)) {
-          foundCycle = true;
-          const cycleStartIdx = path.indexOf(neighbor);
-          const cyclePath = path.slice(cycleStartIdx);
-          cyclePath.push(neighbor);
-          for (let i = 0; i < cyclePath.length - 1; i++) {
-            cycleEdges.push(`${cyclePath[i]}->${cyclePath[i + 1]}`);
+          if (canAllocate) {
+            for (let j = 0; j < m; j++) {
+              work[j] += processes[i].allocation[j] || 0;
+            }
+            finish[i] = true;
+            found = true;
           }
-          cycleNodes.push(...cyclePath.slice(0, -1));
-          return true;
         }
-      }
-
-      path.pop();
-      recStack.delete(node);
-      return false;
-    };
-
-    for (const p of processes) {
-      const nodeKey = `P${p.processId}`;
-      if (!visited.has(nodeKey)) {
-        dfs(nodeKey, []);
-        if (foundCycle) break;
       }
     }
 
     const deadlockedProcessIds: number[] = [];
-    const cycleResourceIds: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (!finish[i]) {
+        deadlockedProcessIds.push(processes[i].processId);
+        const pNode = processNodes.find((n) => n.id === processes[i].processId);
+        if (pNode) pNode.isDeadlocked = true;
+      }
+    }
 
-    if (foundCycle) {
-      for (const node of cycleNodes) {
-        if (node.startsWith('P')) {
-          const pid = parseInt(node.substring(1), 10);
-          deadlockedProcessIds.push(pid);
-          const pNode = processNodes.find((n) => n.id === pid);
-          if (pNode) pNode.isDeadlocked = true;
-        } else if (node.startsWith('R')) {
-          const rid = parseInt(node.substring(1), 10);
-          cycleResourceIds.push(rid);
-          const rNode = resourceNodes.find((n) => n.id === rid);
-          if (rNode) rNode.isInCycle = true;
+    const hasDeadlock = deadlockedProcessIds.length > 0;
+
+    if (hasDeadlock) {
+      const deadlockedSet = new Set(deadlockedProcessIds);
+      const deadlockedResourceIds = new Set<number>();
+
+      for (let i = 0; i < n; i++) {
+        if (deadlockedSet.has(processes[i].processId)) {
+          for (let j = 0; j < m; j++) {
+            if (processes[i].allocation[j] > 0 || need[i][j] > 0) {
+              deadlockedResourceIds.add(resources[j].id);
+              const rNode = resourceNodes.find((r) => r.id === resources[j].id);
+              if (rNode) rNode.isInCycle = true;
+            }
+          }
         }
       }
 
       for (const edge of edges) {
-        const edgeKey = `${edge.from}->${edge.to}`;
-        if (cycleEdges.includes(edgeKey)) {
-          edge.isCycle = true;
+        let isRelated = false;
+        if (edge.from.startsWith('P')) {
+          const pid = parseInt(edge.from.substring(1), 10);
+          isRelated = deadlockedSet.has(pid);
+        } else if (edge.from.startsWith('R')) {
+          const rid = parseInt(edge.from.substring(1), 10);
+          isRelated = deadlockedResourceIds.has(rid);
+        }
+        if (edge.to.startsWith('P')) {
+          const pid = parseInt(edge.to.substring(1), 10);
+          isRelated = isRelated || deadlockedSet.has(pid);
+        } else if (edge.to.startsWith('R')) {
+          const rid = parseInt(edge.to.substring(1), 10);
+          isRelated = isRelated || deadlockedResourceIds.has(rid);
+        }
+        if (isRelated && deadlockedResourceIds.size > 0 && deadlockedSet.size > 0) {
+          let fromDeadlock = false;
+          let toDeadlock = false;
+          if (edge.from.startsWith('P')) {
+            const pid = parseInt(edge.from.substring(1), 10);
+            fromDeadlock = deadlockedSet.has(pid);
+          } else if (edge.from.startsWith('R')) {
+            const rid = parseInt(edge.from.substring(1), 10);
+            fromDeadlock = deadlockedResourceIds.has(rid);
+          }
+          if (edge.to.startsWith('P')) {
+            const pid = parseInt(edge.to.substring(1), 10);
+            toDeadlock = deadlockedSet.has(pid);
+          } else if (edge.to.startsWith('R')) {
+            const rid = parseInt(edge.to.substring(1), 10);
+            toDeadlock = deadlockedResourceIds.has(rid);
+          }
+          if (fromDeadlock && toDeadlock) {
+            edge.isCycle = true;
+          }
         }
       }
     }
 
     return {
-      hasDeadlock: foundCycle,
+      hasDeadlock,
       deadlockedProcesses: deadlockedProcessIds,
-      cycleEdges,
+      cycleEdges: edges.filter((e) => e.isCycle).map((e) => `${e.from}->${e.to}`),
       edges,
       processNodes,
       resourceNodes,
