@@ -111,4 +111,10 @@
       </div>
     </div>
   </ng-container>
+
+  <app-deadlock-detector
+    [processes]="processes"
+    [completedProcessIds]="completedProcessIds"
+    (resourceInfoChange)="onResourceInfoChange($event)"
+  ></app-deadlock-detector>
 </div>

@@ -10,7 +10,9 @@ import { GanttChartComponent } from './components/gantt-chart/gantt-chart.compon
 import { ReadyQueueComponent } from './components/ready-queue/ready-queue.component';
 import { MetricsPanelComponent } from './components/metrics-panel/metrics-panel.component';
 import { AnimationControlsComponent } from './components/animation-controls/animation-controls.component';
+import { DeadlockDetectorComponent } from './components/deadlock-detector/deadlock-detector.component';
 import { SchedulingService } from './services/scheduling.service';
+import { DeadlockService } from './services/deadlock.service';
 
 @NgModule({
   declarations: [AppComponent],
@@ -25,8 +27,9 @@ import { SchedulingService } from './services/scheduling.service';
     ReadyQueueComponent,
     MetricsPanelComponent,
     AnimationControlsComponent,
+    DeadlockDetectorComponent,
   ],
-  providers: [SchedulingService],
+  providers: [SchedulingService, DeadlockService],
   bootstrap: [AppComponent],
 })
 export class AppModule {}

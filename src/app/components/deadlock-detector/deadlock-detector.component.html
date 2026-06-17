@@ -1,0 +1,549 @@
+<div class="deadlock-detector">
+  <div class="section-header" (click)="toggleExpand()">
+    <div class="header-content">
+      <span class="toggle-icon">{{ isExpanded ? '▼' : '▶' }}</span>
+      <h2 class="section-title">🔒 死锁检测与资源分配</h2>
+      <span class="subtitle">银行家算法 · 死锁检测 · 资源分配图</span>
+    </div>
+  </div>
+
+  <div class="section-body" *ngIf="isExpanded">
+    <div class="resource-config-section card">
+      <div class="card-title">📦 资源配置</div>
+      <div class="resource-list">
+        <div
+          *ngFor="let resource of resources"
+          class="resource-item"
+          [style.borderLeftColor]="resource.color"
+        >
+          <span class="resource-name">{{ resource.name }}</span>
+          <div class="resource-count-control">
+            <button
+              class="btn btn-small"
+              (click)="updateResourceCount(resource.id, resource.totalCount - 1)"
+              [disabled]="resource.totalCount <= 1"
+            >
+              -
+            </button>
+            <span class="count-value">{{ resource.totalCount }}</span>
+            <button
+              class="btn btn-small"
+              (click)="updateResourceCount(resource.id, resource.totalCount + 1)"
+              [disabled]="resource.totalCount >= 10"
+            >
+              +
+            </button>
+          </div>
+          <button
+            class="btn btn-small btn-delete"
+            (click)="removeResource(resource.id)"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+
+      <div class="add-resource-form" *ngIf="resources.length < 8">
+        <input
+          type="text"
+          placeholder="资源名称"
+          [(ngModel)]="newResourceName"
+          class="input-small"
+        />
+        <input
+          type="number"
+          min="1"
+          max="10"
+          [(ngModel)]="newResourceCount"
+          class="input-small count-input"
+        />
+        <button
+          class="btn btn-primary"
+          (click)="addResource()"
+          [disabled]="!newResourceName.trim() || newResourceCount < 1 || newResourceCount > 10"
+        >
+          + 添加资源
+        </button>
+      </div>
+      <div class="hint-text" *ngIf="resources.length >= 8">
+        最多支持 8 种资源类型
+      </div>
+    </div>
+
+    <div class="process-resource-section card">
+      <div class="card-title">📋 进程资源需求</div>
+      <div class="available-info">
+        <span class="label">可用资源 (Available):</span>
+        <span class="available-values">
+          [{{ getAvailableResources().join(', ') }}]
+        </span>
+      </div>
+
+      <div *ngIf="processes.length === 0" class="empty-state">
+        暂无进程
+      </div>
+
+      <table *ngIf="processes.length > 0" class="resource-table">
+        <thead>
+          <tr>
+            <th>进程</th>
+            <th>已持有 (Allocation)</th>
+            <th>最大需求 (Max)</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            *ngFor="let info of processResourceInfo"
+            [class.completed]="isProcessCompleted(info.processId)"
+          >
+            <td>
+              <span
+                class="process-badge"
+                [style.backgroundColor]="getProcessById(info.processId)?.color"
+              >
+                P{{ info.processId }}
+              </span>
+            </td>
+            <td>
+              <div class="resource-cells">
+                <span
+                  *ngFor="let alloc of info.allocation; let i = index"
+                  class="resource-cell"
+                  [style.backgroundColor]="getResourceColor(i, 30)"
+                  [style.borderColor]="resources[i].color"
+                >
+                  {{ alloc }}
+                </span>
+              </div>
+            </td>
+            <td>
+              <div class="resource-cells">
+                <span
+                  *ngFor="let m of info.max; let i = index"
+                  class="resource-cell"
+                  [style.backgroundColor]="getResourceColor(i, 20)"
+                  [style.borderColor]="resources[i].color"
+                >
+                  {{ m }}
+                </span>
+              </div>
+            </td>
+            <td>
+              <span
+                class="status-badge"
+                [class.status-completed]="isProcessCompleted(info.processId)"
+              >
+                {{ isProcessCompleted(info.processId) ? '已完成' : '运行中' }}
+              </span>
+            </td>
+            <td>
+              <button
+                class="btn btn-small btn-secondary"
+                (click)="openResourceModal(info.processId)"
+                [disabled]="isProcessCompleted(info.processId)"
+              >
+                配置资源
+              </button>
+              <button
+                class="btn btn-small btn-primary"
+                (click)="openRequestModal(info.processId)"
+                [disabled]="isProcessCompleted(info.processId)"
+              >
+                资源请求
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="banker-section card">
+      <div class="card-title">🏦 银行家算法 - 安全性检测</div>
+      <div class="banker-controls">
+        <button
+          class="btn btn-primary"
+          (click)="runBankerAlgorithm()"
+          [disabled]="resources.length === 0 || processResourceInfo.length === 0"
+        >
+          运行安全性检测
+        </button>
+        <div class="mode-toggle">
+          <label>
+            <input
+              type="radio"
+              name="bankerMode"
+              value="instant"
+              [(ngModel)]="bankerPlayMode"
+              (change)="resetBankerAnimation()"
+            />
+            一步到位
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="bankerMode"
+              value="step"
+              [(ngModel)]="bankerPlayMode"
+              (change)="resetBankerAnimation()"
+            />
+            逐步播放
+          </label>
+        </div>
+      </div>
+
+      <div *ngIf="bankerResult && currentStep" class="banker-visualization">
+        <div class="banker-summary">
+          <div class="summary-item">
+            <span class="label">状态:</span>
+            <span
+              class="value"
+              [class.safe]="bankerResult.isSafe"
+              [class.unsafe]="!bankerResult.isSafe"
+            >
+              {{ bankerResult.isSafe ? '✅ 安全状态' : '❌ 不安全状态' }}
+            </span>
+          </div>
+          <div class="summary-item" *ngIf="bankerResult.isSafe">
+            <span class="label">安全序列:</span>
+            <span class="value safe-sequence">
+              {{ getSafeSequenceText() }}
+            </span>
+          </div>
+        </div>
+
+        <div class="step-info">
+          <div class="step-header">
+            <span>步骤 {{ currentStep.step }} / {{ bankerResult.steps.length - 1 }}</span>
+            <div class="step-controls" *ngIf="bankerPlayMode === 'step'">
+              <button
+                class="btn btn-small"
+                (click)="prevBankerStep()"
+                [disabled]="currentBankerStep === 0"
+              >
+                ◀ 上一步
+              </button>
+              <button class="btn btn-small" (click)="toggleBankerPlay()">
+                {{ bankerIsPlaying ? '⏸ 暂停' : '▶ 播放' }}
+              </button>
+              <button
+                class="btn btn-small"
+                (click)="nextBankerStep()"
+                [disabled]="currentBankerStep >= bankerResult.steps.length - 1"
+              >
+                下一步 ▶
+              </button>
+              <button class="btn btn-small btn-secondary" (click)="resetBankerAnimation()">
+                重置
+              </button>
+            </div>
+          </div>
+          <div class="step-message">{{ currentStep.message }}</div>
+        </div>
+
+        <div class="matrix-display">
+          <div class="vector-section">
+            <h4>Available (可用资源)</h4>
+            <div class="vector-row">
+              <span
+                *ngFor="let val of currentStep.available; let i = index"
+                class="vector-cell"
+                [style.backgroundColor]="getResourceColor(i, 30)"
+                [style.borderColor]="resources[i].color"
+              >
+                <span class="res-label">{{ getResourceLabel(i) }}</span>
+                <span class="res-value">{{ val }}</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="vector-section">
+            <h4>Work (工作向量)</h4>
+            <div class="vector-row">
+              <span
+                *ngFor="let val of currentStep.work; let i = index"
+                class="vector-cell work-cell"
+                [style.backgroundColor]="getResourceColor(i, 40)"
+                [style.borderColor]="resources[i].color"
+              >
+                <span class="res-label">{{ getResourceLabel(i) }}</span>
+                <span class="res-value">{{ val }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="need-matrix-section">
+          <h4>Need 矩阵 (Max - Allocation)</h4>
+          <table class="need-table">
+            <thead>
+              <tr>
+                <th>进程</th>
+                <th *ngFor="let r of resources">{{ getResourceLabelByResource(r) }}</th>
+                <th>Finish</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                *ngFor="let row of currentStep.need; let i = index"
+                [class.highlighted]="isRowHighlighted(i)"
+                [class.finished]="currentStep.finished[i]"
+              >
+                <td>
+                  <span
+                    class="process-badge small"
+                    [style.backgroundColor]="getProcessColor(i)"
+                  >
+                    P{{ getProcessIdByIndex(i) }}
+                  </span>
+                </td>
+                <td *ngFor="let val of row">{{ val }}</td>
+                <td>
+                  <span
+                    class="finish-indicator"
+                    [class.done]="currentStep.finished[i]"
+                  >
+                    {{ currentStep.finished[i] ? '✓' : '✗' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="deadlock-detection-section card">
+      <div class="card-title">🔍 死锁检测</div>
+      <button
+        class="btn btn-warning"
+        (click)="runDeadlockDetection()"
+        [disabled]="resources.length === 0 || processResourceInfo.length === 0"
+      >
+        检测死锁 (资源分配图法)
+      </button>
+
+      <div *ngIf="deadlockResult" class="deadlock-result">
+        <div
+          class="result-summary"
+          [class.deadlock]="deadlockResult.hasDeadlock"
+          [class.no-deadlock]="!deadlockResult.hasDeadlock"
+        >
+          {{ deadlockResult.hasDeadlock ? '⚠️ 检测到死锁!' : '✅ 无死锁' }}
+        </div>
+
+        <div *ngIf="deadlockResult.hasDeadlock" class="deadlock-detail">
+          <p>死锁进程: {{ getDeadlockedProcessesText() }}</p>
+        </div>
+
+        <div class="allocation-graph">
+          <h4>资源分配图</h4>
+          <div class="graph-container">
+            <svg viewBox="0 0 600 300" class="graph-svg">
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="10"
+                  markerHeight="7"
+                  refX="9"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280" />
+                </marker>
+              </defs>
+
+              <g *ngFor="let edge of deadlockResult.edges; let i = index">
+                <line
+                  *ngIf="hasEdgePosition(i)"
+                  [attr.x1]="getEdgeX1(i)"
+                  [attr.y1]="getEdgeY1(i)"
+                  [attr.x2]="getEdgeX2(i)"
+                  [attr.y2]="getEdgeY2(i)"
+                  [attr.stroke]="getEdgeStroke(i)"
+                  [attr.stroke-width]="getEdgeStrokeWidth(i)"
+                  marker-end="url(#arrowhead)"
+                />
+              </g>
+
+              <g *ngFor="let p of deadlockResult.processNodes; let i = index">
+                <circle
+                  [attr.cx]="getProcessCx(i)"
+                  [attr.cy]="getProcessCy(i)"
+                  r="25"
+                  [attr.fill]="getProcessColorById(p.id)"
+                  [attr.stroke]="getProcessStroke(p.isDeadlocked)"
+                  [attr.stroke-width]="getProcessStrokeWidth(p.isDeadlocked)"
+                />
+                <text
+                  [attr.x]="getProcessCx(i)"
+                  [attr.y]="getProcessTy(i)"
+                  text-anchor="middle"
+                  fill="white"
+                  font-size="12"
+                  font-weight="bold"
+                >
+                  P{{ p.id }}
+                </text>
+              </g>
+
+              <g *ngFor="let r of deadlockResult.resourceNodes; let i = index">
+                <rect
+                  [attr.x]="getResourceX(i)"
+                  [attr.y]="getResourceY(i)"
+                  width="40"
+                  height="40"
+                  [attr.fill]="getResourceFill(i)"
+                  [attr.stroke]="getResourceStroke(r.isInCycle)"
+                  [attr.stroke-width]="getResourceStrokeWidth(r.isInCycle)"
+                  rx="4"
+                />
+                <text
+                  [attr.x]="getResourceTextX(i)"
+                  [attr.y]="getResourceTextY(i)"
+                  text-anchor="middle"
+                  fill="#374151"
+                  font-size="11"
+                >
+                  {{ getResourceNodeLabel(i) }}
+                </text>
+              </g>
+            </svg>
+          </div>
+
+          <div class="graph-legend">
+            <div class="legend-item">
+              <span class="legend-color process-color"></span>
+              <span>进程节点 (圆形)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color resource-color"></span>
+              <span>资源节点 (方形)</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color cycle-color"></span>
+              <span>循环边 (死锁)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" *ngIf="resourceModalVisible" (click)="closeResourceModal()">
+    <div class="modal-content" (click)="stopPropagation($event)">
+      <div class="modal-header">
+        <h3>配置资源需求 - P{{ selectedProcessId }}</h3>
+        <button class="close-btn" (click)="closeResourceModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <h4>已持有资源 (Allocation)</h4>
+          <div class="input-row">
+            <div *ngFor="let r of resources; let i = index" class="input-group">
+              <label>{{ r.name }}</label>
+              <input
+                type="number"
+                min="0"
+                [(ngModel)]="tempAllocation[i]"
+                [max]="r.totalCount"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="form-section">
+          <h4>最大需求 (Max)</h4>
+          <div class="input-row">
+            <div *ngFor="let r of resources; let i = index" class="input-group">
+              <label>{{ r.name }}</label>
+              <input
+                type="number"
+                min="0"
+                [(ngModel)]="tempMax[i]"
+                [max]="r.totalCount"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeResourceModal()">取消</button>
+        <button class="btn btn-primary" (click)="saveResourceModal()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" *ngIf="requestModalVisible" (click)="closeRequestModal()">
+    <div class="modal-content" (click)="stopPropagation($event)">
+      <div class="modal-header">
+        <h3>资源请求 - P{{ requestProcessId }}</h3>
+        <button class="close-btn" (click)="closeRequestModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <h4>请求向量 (Request)</h4>
+          <div class="input-row">
+            <div *ngFor="let r of resources; let i = index" class="input-group">
+              <label>{{ r.name }}</label>
+              <input
+                type="number"
+                min="0"
+                [(ngModel)]="tempRequest[i]"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="requestResult" class="request-result">
+          <div
+            class="result-banner"
+            [class.success]="requestResult.success"
+            [class.error]="!requestResult.success"
+          >
+            {{ requestResult.success ? '✅ 请求成功' : '❌ 请求失败' }}
+          </div>
+          <p *ngIf="requestResult.message" class="result-message">
+            {{ requestResult.message }}
+          </p>
+          <div *ngIf="!requestResult.success && requestResult.failedCheck" class="check-list">
+            <div
+              class="check-item"
+              [class.pass]="requestResult.failedCheck !== 'need'"
+              [class.fail]="requestResult.failedCheck === 'need'"
+            >
+              {{ requestResult.failedCheck === 'need' ? '✗' : '✓' }}
+              Request ≤ Need
+            </div>
+            <div
+              class="check-item"
+              [class.pass]="requestResult.failedCheck !== 'available'"
+              [class.fail]="requestResult.failedCheck === 'available'"
+            >
+              {{ requestResult.failedCheck === 'available' ? '✗' : '✓' }}
+              Request ≤ Available
+            </div>
+            <div
+              class="check-item"
+              [class.pass]="requestResult.failedCheck !== 'safety'"
+              [class.fail]="requestResult.failedCheck === 'safety'"
+            >
+              {{ requestResult.failedCheck === 'safety' ? '✗' : '✓' }}
+              安全性检查
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeRequestModal()">关闭</button>
+        <button
+          class="btn btn-primary"
+          (click)="submitRequest()"
+          [disabled]="requestResult?.success"
+        >
+          提交请求
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

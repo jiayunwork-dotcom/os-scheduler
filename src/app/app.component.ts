@@ -10,6 +10,7 @@ import {
   GanttBlock,
 } from './models/scheduling.model';
 import { SchedulingService } from './services/scheduling.service';
+import { ProcessResourceInfo } from './models/deadlock.model';
 
 @Component({
   selector: 'app-root',
@@ -36,6 +37,8 @@ export class AppComponent implements OnInit, OnDestroy {
   copyToastVisible = false;
 
   private animationTimer: ReturnType<typeof setInterval> | null = null;
+
+  resourceInfos: ProcessResourceInfo[] = [];
 
   constructor(private schedulingService: SchedulingService) {}
 
@@ -262,6 +265,21 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentProcessResults(): ProcessResult[] {
     return this.schedulingResult?.processResults ?? [];
+  }
+
+  get completedProcessIds(): number[] {
+    if (!this.schedulingResult) return [];
+    const completed: number[] = [];
+    for (const result of this.schedulingResult.processResults) {
+      if (this.mode === 'instant' || result.completionTime <= this.currentTime) {
+        completed.push(result.processId);
+      }
+    }
+    return completed;
+  }
+
+  onResourceInfoChange(infos: ProcessResourceInfo[]): void {
+    this.resourceInfos = infos;
   }
 
   exportReport(): void {
