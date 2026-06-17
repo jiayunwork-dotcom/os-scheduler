@@ -97,6 +97,7 @@
           <tr
             *ngFor="let info of processResourceInfo"
             [class.completed]="isProcessCompleted(info.processId)"
+            [class.terminated]="isProcessTerminated(info.processId)"
           >
             <td>
               <span
@@ -134,22 +135,23 @@
               <span
                 class="status-badge"
                 [class.status-completed]="isProcessCompleted(info.processId)"
+                [class.status-terminated]="isProcessTerminated(info.processId)"
               >
-                {{ isProcessCompleted(info.processId) ? '已完成' : '运行中' }}
+                {{ isProcessTerminated(info.processId) ? '已终止' : (isProcessCompleted(info.processId) ? '已完成' : '运行中') }}
               </span>
             </td>
             <td>
               <button
                 class="btn btn-small btn-secondary"
                 (click)="openResourceModal(info.processId)"
-                [disabled]="isProcessCompleted(info.processId)"
+                [disabled]="isProcessCompleted(info.processId) || isProcessTerminated(info.processId)"
               >
                 配置资源
               </button>
               <button
                 class="btn btn-small btn-primary"
                 (click)="openRequestModal(info.processId)"
-                [disabled]="isProcessCompleted(info.processId)"
+                [disabled]="isProcessCompleted(info.processId) || isProcessTerminated(info.processId)"
               >
                 资源请求
               </button>
@@ -311,6 +313,74 @@
             </tbody>
           </table>
         </div>
+
+        <div *ngIf="!bankerResult.isSafe && recoverySuggestions.length > 0" class="recovery-suggestions-section">
+          <h4>💡 建议回收方案</h4>
+          <p class="recovery-hint">系统检测到不安全状态，以下为使系统恢复安全状态的最少资源回收建议（贪心策略：优先从Allocation最大的进程回收）</p>
+          <div class="suggestions-list">
+            <div *ngFor="let item of getAggregatedSuggestions()" class="suggestion-item">
+              <span class="suggestion-process">
+                <span
+                  class="process-badge small"
+                  [style.backgroundColor]="getProcessColorById(item.processId)"
+                >
+                  {{ item.processName }}
+                </span>
+              </span>
+              <span class="suggestion-detail">
+                回收
+                <span *ngFor="let rec of item.recoveries; let last = last">
+                  {{ rec.resourceName }} × {{ rec.amount }}{{ last ? '' : '，' }}
+                </span>
+              </span>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-apply-recovery" (click)="applyRecoverySuggestions()">
+            ✅ 应用建议
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="request-history-section card">
+      <div class="card-title-header">
+        <div class="card-title">📜 资源请求历史</div>
+        <button
+          class="btn btn-small btn-secondary"
+          (click)="clearRequestHistory()"
+          [disabled]="requestHistory.length === 0"
+        >
+          清空历史
+        </button>
+      </div>
+
+      <div *ngIf="requestHistory.length === 0" class="empty-state">
+        暂无请求记录
+      </div>
+
+      <div *ngIf="requestHistory.length > 0" class="history-list">
+        <div *ngFor="let entry of requestHistory" class="history-item" [class.history-success]="entry.result.success" [class.history-fail]="!entry.result.success">
+          <div class="history-main">
+            <span class="history-time">{{ formatTimestamp(entry.timestamp) }}</span>
+            <span
+              class="process-badge small"
+              [style.backgroundColor]="getProcessColorById(entry.processId)"
+            >
+              P{{ entry.processId }}
+            </span>
+            <span class="history-request">[{{ entry.request.join(', ') }}]</span>
+            <span
+              class="history-result"
+              [class.result-success]="entry.result.success"
+              [class.result-fail]="!entry.result.success"
+            >
+              {{ getRequestResultText(entry.result) }}
+            </span>
+          </div>
+          <button class="btn btn-small btn-replay" (click)="replayRequest(entry)">
+            🔄 回放
+          </button>
+        </div>
       </div>
     </div>
 
@@ -335,6 +405,56 @@
 
         <div *ngIf="deadlockResult.hasDeadlock" class="deadlock-detail">
           <p>死锁进程: {{ getDeadlockedProcessesText() }}</p>
+        </div>
+
+        <div *ngIf="deadlockResult.hasDeadlock && getActiveDeadlockedProcesses().length > 0" class="deadlock-resolution-section">
+          <h4>🔧 解除死锁</h4>
+          <p class="resolution-hint">选择要终止的进程（至少选一个），被终止进程的资源将释放回Available</p>
+          <div class="terminate-process-list">
+            <label
+              *ngFor="let pid of getActiveDeadlockedProcesses()"
+              class="terminate-process-item"
+            >
+              <input
+                type="checkbox"
+                [checked]="isTerminateSelected(pid)"
+                (change)="toggleTerminateSelection(pid)"
+              />
+              <span
+                class="process-badge small"
+                [style.backgroundColor]="getProcessColorById(pid)"
+              >
+                P{{ pid }}
+              </span>
+              <span class="terminate-allocation-info">
+                (持有: {{ getProcessAllocationText(pid) }})
+              </span>
+            </label>
+          </div>
+          <button
+            class="btn btn-danger btn-terminate"
+            (click)="terminateSelectedProcesses()"
+            [disabled]="!hasSelectedTerminateProcesses()"
+          >
+            🛑 终止选中进程
+          </button>
+          <div *ngIf="deadlockResolutionMessage" class="resolution-message" [class.resolution-success]="isResolutionSuccess()" [class.resolution-warning]="isResolutionWarning()">
+            {{ deadlockResolutionMessage }}
+          </div>
+        </div>
+
+        <div *ngIf="deadlockResult.hasDeadlock" class="terminated-processes-info" >
+          <h4 *ngIf="hasTerminatedProcesses()">已终止进程</h4>
+          <div *ngFor="let tp of terminatedProcesses" class="terminated-process-item">
+            <span
+              class="process-badge small"
+              [style.backgroundColor]="getProcessColorById(tp.processId)"
+              style="opacity: 0.5; text-decoration: line-through;"
+            >
+              P{{ tp.processId }}
+            </span>
+            <span class="terminated-label">已终止</span>
+          </div>
         </div>
 
         <div class="allocation-graph">

@@ -7,6 +7,7 @@ import {
   ResourceRequestResult,
   DeadlockDetectionResult,
   GraphEdge,
+  RecoverySuggestion,
 } from '../models/deadlock.model';
 
 @Injectable({ providedIn: 'root' })
@@ -375,5 +376,81 @@ export class DeadlockService {
       }
     }
     return { valid: true };
+  }
+
+  calculateRecoverySuggestions(
+    resources: ResourceType[],
+    processes: ProcessResourceInfo[]
+  ): RecoverySuggestion[] {
+    const suggestions: RecoverySuggestion[] = [];
+    const simProcesses = processes.map(p => ({
+      processId: p.processId,
+      allocation: [...p.allocation],
+      max: [...p.max],
+    }));
+    const simResources = resources.map(r => ({ ...r }));
+
+    let result = this.runBankerAlgorithm(simResources, simProcesses);
+    if (result.isSafe) return suggestions;
+
+    const maxIterations = 100;
+    let iteration = 0;
+
+    while (!result.isSafe && iteration < maxIterations) {
+      iteration++;
+      const activeIndices = simProcesses
+        .map((p, i) => ({ p, i }))
+        .filter(x => x.p.allocation.some(a => a > 0))
+        .sort((a, b) => {
+          const totalA = a.p.allocation.reduce((s, v) => s + v, 0);
+          const totalB = b.p.allocation.reduce((s, v) => s + v, 0);
+          return totalB - totalA;
+        });
+
+      if (activeIndices.length === 0) break;
+
+      const target = activeIndices[0];
+      let recovered = false;
+
+      for (let j = 0; j < simResources.length; j++) {
+        if (target.p.allocation[j] > 0) {
+          target.p.allocation[j]--;
+          suggestions.push({
+            processId: target.p.processId,
+            resourceType: j,
+            amount: 1,
+            resourceName: simResources[j].name,
+          });
+          result = this.runBankerAlgorithm(simResources, simProcesses);
+          recovered = true;
+          break;
+        }
+      }
+
+      if (!recovered) break;
+    }
+
+    return suggestions;
+  }
+
+  applyRecoverySuggestions(
+    resources: ResourceType[],
+    processes: ProcessResourceInfo[],
+    suggestions: RecoverySuggestion[]
+  ): ProcessResourceInfo[] {
+    const updated = processes.map(p => ({
+      processId: p.processId,
+      allocation: [...p.allocation],
+      max: [...p.max],
+    }));
+
+    for (const sug of suggestions) {
+      const proc = updated.find(p => p.processId === sug.processId);
+      if (proc && proc.allocation[sug.resourceType] > 0) {
+        proc.allocation[sug.resourceType] = Math.max(0, proc.allocation[sug.resourceType] - sug.amount);
+      }
+    }
+
+    return updated;
   }
 }

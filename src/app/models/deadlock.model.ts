@@ -54,3 +54,27 @@ export interface DeadlockDetectionResult {
   processNodes: { id: number; label: string; isDeadlocked: boolean }[];
   resourceNodes: { id: number; label: string; isInCycle: boolean }[];
 }
+
+export interface RequestHistoryEntry {
+  id: number;
+  timestamp: Date;
+  processId: number;
+  request: number[];
+  result: ResourceRequestResult;
+  snapshot: {
+    processResourceInfo: ProcessResourceInfo[];
+    resources: ResourceType[];
+  };
+}
+
+export interface RecoverySuggestion {
+  processId: number;
+  resourceType: number;
+  amount: number;
+  resourceName: string;
+}
+
+export interface TerminatedProcessInfo {
+  processId: number;
+  terminated: boolean;
+}

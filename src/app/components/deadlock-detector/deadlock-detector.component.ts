@@ -9,6 +9,9 @@ import {
   BankerStep,
   ResourceRequestResult,
   DeadlockDetectionResult,
+  RequestHistoryEntry,
+  RecoverySuggestion,
+  TerminatedProcessInfo,
 } from '../../models/deadlock.model';
 import { DeadlockService } from '../../services/deadlock.service';
 
@@ -70,6 +73,15 @@ export class DeadlockDetectorComponent implements OnInit, OnChanges {
   tempAllocation: number[] = [];
   tempMax: number[] = [];
   tempRequest: number[] = [];
+
+  requestHistory: RequestHistoryEntry[] = [];
+  private requestHistoryCounter = 0;
+
+  recoverySuggestions: RecoverySuggestion[] = [];
+
+  terminatedProcesses: TerminatedProcessInfo[] = [];
+  selectedTerminateProcesses: number[] = [];
+  deadlockResolutionMessage: string | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -166,6 +178,8 @@ export class DeadlockDetectorComponent implements OnInit, OnChanges {
     this.currentBankerStep = 0;
     this.stopBankerAnimation();
     this.deadlockResult = null;
+    this.recoverySuggestions = [];
+    this.deadlockResolutionMessage = null;
   }
 
   private emitResourceInfo(): void {
@@ -289,6 +303,15 @@ export class DeadlockDetectorComponent implements OnInit, OnChanges {
       this.processResourceInfo
     );
 
+    if (!this.bankerResult.isSafe) {
+      this.recoverySuggestions = this.deadlockService.calculateRecoverySuggestions(
+        this.resources,
+        this.processResourceInfo
+      );
+    } else {
+      this.recoverySuggestions = [];
+    }
+
     if (this.bankerPlayMode === 'instant') {
       this.currentBankerStep = this.bankerResult.steps.length - 1;
     } else {
@@ -376,12 +399,31 @@ export class DeadlockDetectorComponent implements OnInit, OnChanges {
       Math.max(0, Math.floor(v))
     );
 
+    const snapshot = {
+      processResourceInfo: this.processResourceInfo.map(p => ({
+        processId: p.processId,
+        allocation: [...p.allocation],
+        max: [...p.max],
+      })),
+      resources: this.resources.map(r => ({ ...r })),
+    };
+
     this.requestResult = this.deadlockService.checkResourceRequest(
       this.resources,
       this.processResourceInfo,
       this.requestProcessId,
       request
     );
+
+    this.requestHistoryCounter++;
+    this.requestHistory.unshift({
+      id: this.requestHistoryCounter,
+      timestamp: new Date(),
+      processId: this.requestProcessId,
+      request: [...request],
+      result: { ...this.requestResult },
+      snapshot,
+    });
 
     if (this.requestResult.success && this.requestResult.newAllocation) {
       const info = this.processResourceInfo.find(
@@ -648,5 +690,172 @@ export class DeadlockDetectorComponent implements OnInit, OnChanges {
 
   stopPropagation(event: Event): void {
     event.stopPropagation();
+  }
+
+  clearRequestHistory(): void {
+    this.requestHistory = [];
+    this.requestHistoryCounter = 0;
+  }
+
+  replayRequest(entry: RequestHistoryEntry): void {
+    this.processResourceInfo = entry.snapshot.processResourceInfo.map(p => ({
+      processId: p.processId,
+      allocation: [...p.allocation],
+      max: [...p.max],
+    }));
+    this.resources = entry.snapshot.resources.map(r => ({ ...r }));
+    this.emitResourceInfo();
+
+    const replayResult = this.deadlockService.checkResourceRequest(
+      this.resources,
+      this.processResourceInfo,
+      entry.processId,
+      entry.request
+    );
+
+    if (replayResult.success && replayResult.newAllocation) {
+      const info = this.processResourceInfo.find(
+        (p) => p.processId === entry.processId
+      );
+      if (info) {
+        info.allocation = replayResult.newAllocation;
+      }
+      this.emitResourceInfo();
+    }
+
+    this.bankerResult = null;
+    this.currentBankerStep = 0;
+    this.deadlockResult = null;
+    this.recoverySuggestions = [];
+    this.requestResult = replayResult;
+
+    this.requestProcessId = entry.processId;
+    this.tempRequest = [...entry.request];
+    this.requestModalVisible = true;
+  }
+
+  applyRecoverySuggestions(): void {
+    if (this.recoverySuggestions.length === 0) return;
+
+    this.processResourceInfo = this.deadlockService.applyRecoverySuggestions(
+      this.resources,
+      this.processResourceInfo,
+      this.recoverySuggestions
+    );
+
+    this.emitResourceInfo();
+    this.recoverySuggestions = [];
+    this.runBankerAlgorithm();
+  }
+
+  isProcessTerminated(processId: number): boolean {
+    return this.terminatedProcesses.some(p => p.processId === processId && p.terminated);
+  }
+
+  toggleTerminateSelection(processId: number): void {
+    const idx = this.selectedTerminateProcesses.indexOf(processId);
+    if (idx === -1) {
+      this.selectedTerminateProcesses.push(processId);
+    } else {
+      this.selectedTerminateProcesses.splice(idx, 1);
+    }
+  }
+
+  isTerminateSelected(processId: number): boolean {
+    return this.selectedTerminateProcesses.includes(processId);
+  }
+
+  terminateSelectedProcesses(): void {
+    if (this.selectedTerminateProcesses.length === 0) return;
+
+    for (const pid of this.selectedTerminateProcesses) {
+      const info = this.processResourceInfo.find(p => p.processId === pid);
+      if (info) {
+        info.allocation = new Array(this.resources.length).fill(0);
+      }
+
+      if (!this.terminatedProcesses.some(p => p.processId === pid)) {
+        this.terminatedProcesses.push({ processId: pid, terminated: true });
+      }
+    }
+
+    this.selectedTerminateProcesses = [];
+    this.emitResourceInfo();
+
+    this.deadlockResult = this.deadlockService.detectDeadlock(
+      this.resources,
+      this.processResourceInfo
+    );
+
+    if (!this.deadlockResult.hasDeadlock) {
+      this.deadlockResolutionMessage = '✅ 死锁已解除！被终止进程的资源已释放。';
+    } else {
+      this.deadlockResolutionMessage = '⚠️ 死锁仍然存在，请继续选择进程终止。';
+    }
+  }
+
+  getActiveDeadlockedProcesses(): number[] {
+    if (!this.deadlockResult?.hasDeadlock) return [];
+    return this.deadlockResult.deadlockedProcesses.filter(
+      pid => !this.isProcessTerminated(pid)
+    );
+  }
+
+  formatTimestamp(date: Date): string {
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    const s = date.getSeconds().toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
+  getRequestResultText(result: ResourceRequestResult): string {
+    if (result.success) return '成功';
+    if (result.failedCheck === 'need') return '失败(Request>Need)';
+    if (result.failedCheck === 'available') return '失败(Request>Available)';
+    if (result.failedCheck === 'safety') return '失败(不安全状态)';
+    return '失败';
+  }
+
+  getAggregatedSuggestions(): { processId: number; processName: string; recoveries: { resourceName: string; amount: number }[] }[] {
+    const map = new Map<number, { resourceName: string; amount: number }[]>();
+    for (const sug of this.recoverySuggestions) {
+      if (!map.has(sug.processId)) {
+        map.set(sug.processId, []);
+      }
+      const list = map.get(sug.processId)!;
+      const existing = list.find(r => r.resourceName === sug.resourceName);
+      if (existing) {
+        existing.amount += sug.amount;
+      } else {
+        list.push({ resourceName: sug.resourceName, amount: sug.amount });
+      }
+    }
+    const result: { processId: number; processName: string; recoveries: { resourceName: string; amount: number }[] }[] = [];
+    map.forEach((recoveries, processId) => {
+      result.push({ processId, processName: `P${processId}`, recoveries });
+    });
+    return result;
+  }
+
+  getProcessAllocationText(processId: number): string {
+    const info = this.processResourceInfo.find(p => p.processId === processId);
+    if (!info) return '[]';
+    return '[' + info.allocation.join(', ') + ']';
+  }
+
+  isResolutionSuccess(): boolean {
+    return this.deadlockResolutionMessage !== null && this.deadlockResolutionMessage.charAt(0) === '\u2705';
+  }
+
+  isResolutionWarning(): boolean {
+    return this.deadlockResolutionMessage !== null && this.deadlockResolutionMessage.charAt(0) === '\u26A0';
+  }
+
+  hasSelectedTerminateProcesses(): boolean {
+    return this.selectedTerminateProcesses.length > 0;
+  }
+
+  hasTerminatedProcesses(): boolean {
+    return this.terminatedProcesses.length > 0;
   }
 }
