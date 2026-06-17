@@ -199,6 +199,8 @@ export class SchedulingService {
     timelines: Map<number, TimelineSegment[]>,
     totalTime: number,
     idleTime: number,
+    contextSwitchCount: number,
+    preemptionCounts: Map<number, number>,
   ): SchedulingResult {
     const processResults: ProcessResult[] = [];
     let totalTT = 0;
@@ -243,7 +245,18 @@ export class SchedulingService {
       cpuUtilization: totalTime === 0 ? 0 : (totalTime - idleTime) / totalTime,
       throughput: totalTime === 0 ? 0 : completedCount / totalTime,
       totalTime,
+      contextSwitchCount,
+      cpuIdleTicks: idleTime,
+      preemptionCounts,
     };
+  }
+
+  private initPreemptionCounts(processes: Process[]): Map<number, number> {
+    const counts = new Map<number, number>();
+    for (const p of processes) {
+      counts.set(p.id, 0);
+    }
+    return counts;
   }
 
   private allTerminated(states: Map<number, ProcessState>): boolean {
@@ -320,6 +333,9 @@ export class SchedulingService {
     let currentGanttStart = 0;
     let currentGanttIdle = true;
     let currentGanttPid: number | null = null;
+    let contextSwitchCount = 0;
+    const preemptionCounts = this.initPreemptionCounts(processes);
+    let lastProcessId: number | null = null;
     const readyQueue: number[] = [];
     const waiting: { id: number; endTime: number; queueLevel: number }[] = [];
     const maxSteps = 100000;
@@ -365,6 +381,10 @@ export class SchedulingService {
         });
         const nextId = readyQueue.shift()!;
         currentProcessId = nextId;
+        if (lastProcessId !== null && lastProcessId !== nextId) {
+          contextSwitchCount++;
+        }
+        lastProcessId = nextId;
         states.set(nextId, 'RUNNING');
         const rt = runtime.get(nextId)!;
         if (rt.startTime === -1) {
@@ -439,7 +459,8 @@ export class SchedulingService {
     }
     this.finalizeAllTimelines(timelines, currentTime);
 
-    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime);
+    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime, contextSwitchCount, preemptionCounts);
+
     result.ganttChart = gantt;
     result.events = events;
     result.readyQueueHistory = history;
@@ -460,6 +481,9 @@ export class SchedulingService {
     let currentGanttStart = 0;
     let currentGanttIdle = true;
     let currentGanttPid: number | null = null;
+    let contextSwitchCount = 0;
+    const preemptionCounts = this.initPreemptionCounts(processes);
+    let lastProcessId: number | null = null;
     const readyQueue: number[] = [];
     const waiting: { id: number; endTime: number; queueLevel: number }[] = [];
     const maxSteps = 100000;
@@ -499,6 +523,10 @@ export class SchedulingService {
         this.sortByBurstSJF(readyQueue, processes, runtime);
         const nextId = readyQueue.shift()!;
         currentProcessId = nextId;
+        if (lastProcessId !== null && lastProcessId !== nextId) {
+          contextSwitchCount++;
+        }
+        lastProcessId = nextId;
         states.set(nextId, 'RUNNING');
         const rt = runtime.get(nextId)!;
         if (rt.startTime === -1) rt.startTime = currentTime;
@@ -565,7 +593,7 @@ export class SchedulingService {
     }
     this.finalizeAllTimelines(timelines, currentTime);
 
-    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime);
+    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime, contextSwitchCount, preemptionCounts);
     result.ganttChart = gantt;
     result.events = events;
     result.readyQueueHistory = history;
@@ -586,6 +614,9 @@ export class SchedulingService {
     let currentGanttStart = 0;
     let currentGanttIdle = true;
     let currentGanttPid: number | null = null;
+    let contextSwitchCount = 0;
+    const preemptionCounts = this.initPreemptionCounts(processes);
+    let lastProcessId: number | null = null;
     const readyQueue: number[] = [];
     const waiting: { id: number; endTime: number; queueLevel: number }[] = [];
     const maxSteps = 100000;
@@ -626,6 +657,7 @@ export class SchedulingService {
         const curRt = runtime.get(currentProcessId)!.remainingTime;
         if (bestRt < curRt) {
           this.addEvent(events, currentTime, `抢占发生：P${bestReady}(剩余${bestRt}) 抢占 P${currentProcessId}(剩余${curRt})`, 'warning');
+          preemptionCounts.set(currentProcessId, (preemptionCounts.get(currentProcessId) || 0) + 1);
           states.set(currentProcessId, 'READY');
           readyQueue.push(currentProcessId);
           this.closeTimelineSegment(timelines.get(currentProcessId)!, currentTime, 'execution');
@@ -642,6 +674,10 @@ export class SchedulingService {
         this.sortByRemainingSRTF(readyQueue, processes, runtime);
         const nextId = readyQueue.shift()!;
         currentProcessId = nextId;
+        if (lastProcessId !== null && lastProcessId !== nextId) {
+          contextSwitchCount++;
+        }
+        lastProcessId = nextId;
         states.set(nextId, 'RUNNING');
         const rt = runtime.get(nextId)!;
         if (rt.startTime === -1) rt.startTime = currentTime;
@@ -708,7 +744,7 @@ export class SchedulingService {
     }
     this.finalizeAllTimelines(timelines, currentTime);
 
-    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime);
+    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime, contextSwitchCount, preemptionCounts);
     result.ganttChart = gantt;
     result.events = events;
     result.readyQueueHistory = history;
@@ -730,6 +766,9 @@ export class SchedulingService {
     let currentGanttStart = 0;
     let currentGanttIdle = true;
     let currentGanttPid: number | null = null;
+    let contextSwitchCount = 0;
+    const preemptionCounts = this.initPreemptionCounts(processes);
+    let lastProcessId: number | null = null;
     const readyQueue: number[] = [];
     const waiting: { id: number; endTime: number; queueLevel: number }[] = [];
     const maxSteps = 100000;
@@ -770,6 +809,7 @@ export class SchedulingService {
         const curProc = processes.find(p => p.id === currentProcessId)!;
         if (bestProc.priority < curProc.priority) {
           this.addEvent(events, currentTime, `抢占发生：P${bestReady}(优先级${bestProc.priority}) 抢占 P${currentProcessId}(优先级${curProc.priority})`, 'warning');
+          preemptionCounts.set(currentProcessId, (preemptionCounts.get(currentProcessId) || 0) + 1);
           states.set(currentProcessId, 'READY');
           readyQueue.push(currentProcessId);
           this.closeTimelineSegment(timelines.get(currentProcessId)!, currentTime, 'execution');
@@ -786,6 +826,10 @@ export class SchedulingService {
         this.sortByPriority(readyQueue, processes, runtime);
         const nextId = readyQueue.shift()!;
         currentProcessId = nextId;
+        if (lastProcessId !== null && lastProcessId !== nextId) {
+          contextSwitchCount++;
+        }
+        lastProcessId = nextId;
         states.set(nextId, 'RUNNING');
         const rt = runtime.get(nextId)!;
         if (rt.startTime === -1) rt.startTime = currentTime;
@@ -852,7 +896,7 @@ export class SchedulingService {
     }
     this.finalizeAllTimelines(timelines, currentTime);
 
-    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime);
+    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime, contextSwitchCount, preemptionCounts);
     result.ganttChart = gantt;
     result.events = events;
     result.readyQueueHistory = history;
@@ -875,6 +919,9 @@ export class SchedulingService {
     let currentGanttStart = 0;
     let currentGanttIdle = true;
     let currentGanttPid: number | null = null;
+    let contextSwitchCount = 0;
+    const preemptionCounts = this.initPreemptionCounts(processes);
+    let lastProcessId: number | null = null;
     const readyQueue: number[] = [];
     const waiting: { id: number; endTime: number; queueLevel: number }[] = [];
     const maxSteps = 100000;
@@ -926,6 +973,10 @@ export class SchedulingService {
       if (currentProcessId === null && readyQueue.length > 0) {
         const nextId = readyQueue.shift()!;
         currentProcessId = nextId;
+        if (lastProcessId !== null && lastProcessId !== nextId) {
+          contextSwitchCount++;
+        }
+        lastProcessId = nextId;
         states.set(nextId, 'RUNNING');
         timeSliceUsed = 0;
         const rt = runtime.get(nextId)!;
@@ -995,7 +1046,7 @@ export class SchedulingService {
     }
     this.finalizeAllTimelines(timelines, currentTime);
 
-    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime);
+    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime, contextSwitchCount, preemptionCounts);
     result.ganttChart = gantt;
     result.events = events;
     result.readyQueueHistory = history;
@@ -1019,6 +1070,9 @@ export class SchedulingService {
     let currentGanttStart = 0;
     let currentGanttIdle = true;
     let currentGanttPid: number | null = null;
+    let contextSwitchCount = 0;
+    const preemptionCounts = this.initPreemptionCounts(processes);
+    let lastProcessId: number | null = null;
     const queues: number[][] = [[], [], []];
     const readyQueue: number[] = [];
     const waiting: { id: number; endTime: number; queueLevel: number }[] = [];
@@ -1133,6 +1187,10 @@ export class SchedulingService {
         const next = pickNextMLFQ();
         if (next !== null) {
           currentProcessId = next.id;
+          if (lastProcessId !== null && lastProcessId !== next.id) {
+            contextSwitchCount++;
+          }
+          lastProcessId = next.id;
           currentQueueLevel = next.level;
           timeSliceUsed = 0;
           states.set(next.id, 'RUNNING');
@@ -1206,7 +1264,7 @@ export class SchedulingService {
     }
     this.finalizeAllTimelines(timelines, currentTime);
 
-    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime);
+    const result = this.computeResults(processes, runtime, timelines, currentTime, idleTime, contextSwitchCount, preemptionCounts);
     result.ganttChart = gantt;
     result.events = events;
     result.readyQueueHistory = history;

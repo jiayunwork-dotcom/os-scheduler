@@ -60,4 +60,7 @@ export interface SchedulingResult {
   cpuUtilization: number;
   throughput: number;
   totalTime: number;
+  contextSwitchCount: number;
+  cpuIdleTicks: number;
+  preemptionCounts: Map<number, number>;
 }

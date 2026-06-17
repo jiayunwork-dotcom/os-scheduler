@@ -9,12 +9,53 @@
 }
 
 .title {
-  margin: 0 0 24px 0;
+  margin: 0;
   font-size: 24px;
   font-weight: 600;
   color: #1a1a2e;
+}
+
+.title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
   border-bottom: 2px solid #f0f0f5;
   padding-bottom: 12px;
+}
+
+.preset-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preset-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #57606f;
+  white-space: nowrap;
+}
+
+.preset-select {
+  padding: 8px 32px 8px 12px;
+  font-size: 14px;
+  border: 1.5px solid #dfe4ea;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #2d3436;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.preset-select:focus {
+  border-color: #3742fa;
+  box-shadow: 0 0 0 3px rgba(55, 66, 250, 0.1);
 }
 
 .subtitle {

@@ -21,6 +21,8 @@ export class MetricsPanelComponent {
   @Input() compareResults: CompareItem[] | null = null;
   @Input() compareMode: boolean = false;
 
+  statsExpanded: boolean = false;
+
   readonly barColors = [
     '#4285F4',
     '#EA4335',
@@ -30,6 +32,20 @@ export class MetricsPanelComponent {
     '#00BCD4',
     '#FF5722'
   ];
+
+  toggleStats(): void {
+    this.statsExpanded = !this.statsExpanded;
+  }
+
+  getPreemptionEntries(result: SchedulingResult): { name: string; count: number }[] {
+    const entries: { name: string; count: number }[] = [];
+    if (!result.preemptionCounts) return entries;
+    for (const p of this.processes) {
+      const count = result.preemptionCounts.get(p.id) || 0;
+      entries.push({ name: p.name, count });
+    }
+    return entries;
+  }
 
   getProcessColor(processId: number): string {
     const process = this.processes.find(p => p.id === processId);

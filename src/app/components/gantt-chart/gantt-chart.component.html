@@ -25,11 +25,14 @@
           @for (block of ganttChart; track block.startTime + '-' + block.endTime) {
             @if (isBlockVisible(block)) {
               <div
-                class="gantt-block"
+                class="gantt-block interactive-block"
                 [style.left.px]="getBlockLeft(block)"
                 [style.width.px]="getBlockWidth(block)"
                 [style.backgroundColor]="block.isIdle ? '#ccc' : getProcessColor(block.processId)"
                 [class.idle-block]="block.isIdle"
+                (mouseenter)="onBlockHover($event, block)"
+                (mouseleave)="onBlockLeave()"
+                (click)="onBlockClick(block)"
               >
                 <span class="block-label">{{ getProcessName(block.processId) }}</span>
               </div>
@@ -38,6 +41,16 @@
           @if (animationMode && currentTime >= 0) {
             <div class="current-time-line" [style.left.px]="currentTime * TIME_UNIT_WIDTH"></div>
           }
+          <div
+            class="gantt-tooltip"
+            *ngIf="tooltipVisible"
+            [style.left.px]="tooltipX"
+            [style.top.px]="tooltipY"
+          >
+            <div class="tooltip-row"><strong>{{ tooltipProcessName }}</strong></div>
+            <div class="tooltip-row">起止时间: {{ tooltipStartTime }} → {{ tooltipEndTime }}</div>
+            <div class="tooltip-row">持续长度: {{ tooltipDuration }} 时间单位</div>
+          </div>
         </div>
 
         @for (process of processes; track process.id) {

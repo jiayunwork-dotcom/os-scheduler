@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, OnInit, OnChanges, SimpleChanges, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GanttBlock, ProcessResult, TimelineSegment } from '../../models/scheduling.model';
 import { Process } from '../../models/process.model';
@@ -16,6 +16,7 @@ export class GanttChartComponent implements OnInit, OnChanges {
   @Input() processResults: ProcessResult[] = [];
   @Input() currentTime: number = 0;
   @Input() animationMode: boolean = false;
+  @Output() blockClick = new EventEmitter<number>();
 
   readonly TIME_UNIT_WIDTH = 30;
   readonly ROW_HEIGHT = 40;
@@ -23,6 +24,14 @@ export class GanttChartComponent implements OnInit, OnChanges {
 
   totalTime: number = 0;
   chartWidth: number = 0;
+
+  tooltipVisible: boolean = false;
+  tooltipX: number = 0;
+  tooltipY: number = 0;
+  tooltipProcessName: string = '';
+  tooltipStartTime: number = 0;
+  tooltipEndTime: number = 0;
+  tooltipDuration: number = 0;
 
   ngOnInit(): void {
     this.calculateDimensions();
@@ -115,5 +124,28 @@ export class GanttChartComponent implements OnInit, OnChanges {
   isBlockVisible(block: GanttBlock): boolean {
     if (!this.animationMode) return true;
     return block.startTime <= this.currentTime;
+  }
+
+  onBlockHover(event: MouseEvent, block: GanttBlock): void {
+    this.tooltipVisible = true;
+    this.tooltipProcessName = block.isIdle ? '空闲' : this.getProcessName(block.processId);
+    this.tooltipStartTime = block.startTime;
+    this.tooltipEndTime = block.endTime;
+    this.tooltipDuration = block.endTime - block.startTime;
+    const target = event.currentTarget as HTMLElement;
+    const cpuRow = target.closest('.gantt-cpu-row') as HTMLElement;
+    if (cpuRow) {
+      const rowRect = cpuRow.getBoundingClientRect();
+      this.tooltipX = event.clientX - rowRect.left;
+      this.tooltipY = event.clientY - rowRect.top - 10;
+    }
+  }
+
+  onBlockLeave(): void {
+    this.tooltipVisible = false;
+  }
+
+  onBlockClick(block: GanttBlock): void {
+    this.blockClick.emit(block.startTime);
   }
 }

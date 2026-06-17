@@ -31,6 +31,16 @@ export class ProcessConfigComponent implements OnInit {
 
   processForm!: FormGroup;
 
+  selectedPreset: string = '';
+
+  presetOptions = [
+    { value: '', label: '选择预设方案...' },
+    { value: 'cpu-intensive', label: 'CPU密集对比' },
+    { value: 'io-intensive', label: 'IO密集场景' },
+    { value: 'priority-inversion', label: '优先级反转演示' },
+    { value: 'starvation', label: '短进程饥饿演示' },
+  ];
+
   constructor(private fb: FormBuilder) {}
 
   ngOnInit(): void {
@@ -131,6 +141,49 @@ export class ProcessConfigComponent implements OnInit {
 
   clearAll(): void {
     this.emitProcesses([]);
+  }
+
+  loadPreset(presetKey: string): void {
+    if (!presetKey) return;
+    let presetProcesses: Process[];
+    switch (presetKey) {
+      case 'cpu-intensive':
+        presetProcesses = [
+          { id: 1, name: 'P1', arrivalTime: 0, burstTime: 20, priority: 3, ioBurstTime: 0, ioStartTime: -1, color: '#FF6B6B' },
+          { id: 2, name: 'P2', arrivalTime: 1, burstTime: 3, priority: 2, ioBurstTime: 0, ioStartTime: -1, color: '#4ECDC4' },
+          { id: 3, name: 'P3', arrivalTime: 2, burstTime: 2, priority: 2, ioBurstTime: 0, ioStartTime: -1, color: '#45B7D1' },
+          { id: 4, name: 'P4', arrivalTime: 3, burstTime: 15, priority: 4, ioBurstTime: 0, ioStartTime: -1, color: '#96CEB4' },
+        ];
+        break;
+      case 'io-intensive':
+        presetProcesses = [
+          { id: 1, name: 'P1', arrivalTime: 0, burstTime: 6, priority: 2, ioBurstTime: 4, ioStartTime: 3, color: '#FF6B6B' },
+          { id: 2, name: 'P2', arrivalTime: 0, burstTime: 8, priority: 2, ioBurstTime: 5, ioStartTime: 4, color: '#4ECDC4' },
+          { id: 3, name: 'P3', arrivalTime: 1, burstTime: 5, priority: 3, ioBurstTime: 6, ioStartTime: 2, color: '#45B7D1' },
+          { id: 4, name: 'P4', arrivalTime: 2, burstTime: 4, priority: 1, ioBurstTime: 3, ioStartTime: 2, color: '#96CEB4' },
+        ];
+        break;
+      case 'priority-inversion':
+        presetProcesses = [
+          { id: 1, name: 'P1(低)', arrivalTime: 0, burstTime: 10, priority: 5, ioBurstTime: 0, ioStartTime: -1, color: '#FF6B6B' },
+          { id: 2, name: 'P2(中)', arrivalTime: 2, burstTime: 6, priority: 3, ioBurstTime: 0, ioStartTime: -1, color: '#4ECDC4' },
+          { id: 3, name: 'P3(高)', arrivalTime: 4, burstTime: 3, priority: 1, ioBurstTime: 0, ioStartTime: -1, color: '#45B7D1' },
+        ];
+        break;
+      case 'starvation':
+        presetProcesses = [
+          { id: 1, name: 'P1(长)', arrivalTime: 0, burstTime: 30, priority: 3, ioBurstTime: 0, ioStartTime: -1, color: '#FF6B6B' },
+          { id: 2, name: 'P2(短)', arrivalTime: 1, burstTime: 2, priority: 5, ioBurstTime: 0, ioStartTime: -1, color: '#4ECDC4' },
+          { id: 3, name: 'P3(短)', arrivalTime: 3, burstTime: 3, priority: 5, ioBurstTime: 0, ioStartTime: -1, color: '#45B7D1' },
+          { id: 4, name: 'P4(高优)', arrivalTime: 2, burstTime: 8, priority: 1, ioBurstTime: 0, ioStartTime: -1, color: '#96CEB4' },
+          { id: 5, name: 'P5(高优)', arrivalTime: 5, burstTime: 6, priority: 1, ioBurstTime: 0, ioStartTime: -1, color: '#FFEAA7' },
+        ];
+        break;
+      default:
+        return;
+    }
+    this.emitProcesses(presetProcesses);
+    this.selectedPreset = '';
   }
 
   removeProcess(id: number): void {

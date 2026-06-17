@@ -1,5 +1,18 @@
 <div class="process-config">
-  <h2 class="title">进程配置</h2>
+  <div class="title-row">
+    <h2 class="title">进程配置</h2>
+    <div class="preset-select-wrapper">
+      <label class="preset-label">加载预设：</label>
+      <select
+        class="preset-select"
+        [(ngModel)]="selectedPreset"
+        (change)="loadPreset(selectedPreset)"
+        [ngModelOptions]="{standalone: true}"
+      >
+        <option *ngFor="let opt of presetOptions" [value]="opt.value">{{ opt.label }}</option>
+      </select>
+    </div>
+  </div>
 
   <div class="form-section" [formGroup]="processForm">
     <div class="form-grid">

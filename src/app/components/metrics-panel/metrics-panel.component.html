@@ -74,6 +74,45 @@
           <div class="card-value">{{ formatNumber(result.totalTime) }} 时间单位</div>
         </div>
       </div>
+
+      <div class="stats-collapsible">
+        <div class="stats-header" (click)="toggleStats()">
+          <span class="stats-title">📋 调度统计</span>
+          <span class="stats-toggle">{{ statsExpanded ? '▲' : '▼' }}</span>
+        </div>
+        <div class="stats-body" *ngIf="statsExpanded">
+          <div class="stats-summary-grid">
+            <div class="stat-item">
+              <div class="stat-label">上下文切换次数</div>
+              <div class="stat-value">{{ result.contextSwitchCount }}</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">CPU空闲时间片</div>
+              <div class="stat-value">{{ result.cpuIdleTicks }}</div>
+            </div>
+          </div>
+          <div class="section-title" style="margin-top: 16px;">进程抢占次数</div>
+          <div class="table-container">
+            <table class="metrics-table">
+              <thead>
+                <tr>
+                  <th>进程</th>
+                  <th>被抢占次数</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let entry of getPreemptionEntries(result)">
+                  <td>{{ entry.name }}</td>
+                  <td>{{ entry.count }}</td>
+                </tr>
+                <tr *ngIf="getPreemptionEntries(result).length === 0">
+                  <td colspan="2" style="text-align: center; color: #999;">无抢占发生</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </ng-container>
   </ng-container>
 
@@ -144,6 +183,8 @@
               <th>平均响应时间</th>
               <th>CPU利用率</th>
               <th>吞吐量</th>
+              <th>上下文切换</th>
+              <th>CPU空闲时间片</th>
             </tr>
           </thead>
           <tbody>
@@ -158,6 +199,8 @@
               <td [class.best-value]="isBestResponse(i)">{{ formatNumber(item.result.avgResponseTime) }}</td>
               <td [class.best-value]="isBestCpu(i)">{{ formatPercent(item.result.cpuUtilization) }}</td>
               <td [class.best-value]="isBestThroughput(i)">{{ formatNumber(item.result.throughput) }}</td>
+              <td>{{ item.result.contextSwitchCount }}</td>
+              <td>{{ item.result.cpuIdleTicks }}</td>
             </tr>
           </tbody>
         </table>

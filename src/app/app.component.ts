@@ -33,6 +33,8 @@ export class AppComponent implements OnInit, OnDestroy {
   isPlaying = false;
   speed = 1;
 
+  copyToastVisible = false;
+
   private animationTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private schedulingService: SchedulingService) {}
@@ -216,6 +218,14 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  onGanttBlockClick(time: number): void {
+    if (!this.schedulingResult) return;
+    this.mode = 'animation';
+    this.currentTime = time;
+    this.isPlaying = false;
+    this.stopTimer();
+  }
+
   get isMlfq(): boolean {
     return this.config.algorithm === AlgorithmType.MLFQ;
   }
@@ -252,5 +262,80 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentProcessResults(): ProcessResult[] {
     return this.schedulingResult?.processResults ?? [];
+  }
+
+  exportReport(): void {
+    const lines: string[] = [];
+    lines.push('========================================');
+    lines.push('  操作系统进程调度算法模拟器 - 模拟报告');
+    lines.push('========================================');
+    lines.push('');
+
+    lines.push('【进程配置】');
+    lines.push('进程ID | 到达时间 | CPU Burst | 优先级 | IO Burst | IO时机');
+    lines.push('-------|----------|----------|--------|----------|-------');
+    for (const p of this.processes) {
+      lines.push(
+        `P${p.id}(${p.name}) | ${p.arrivalTime}        | ${p.burstTime}         | ${p.priority}       | ${p.ioBurstTime}         | ${p.ioStartTime === -1 ? '-' : p.ioStartTime}`
+      );
+    }
+    lines.push('');
+
+    if (this.schedulingResult && !this.compareMode) {
+      lines.push('【调度算法】');
+      lines.push(`算法: ${this.config.algorithm}`);
+      if (this.config.timeQuantum) {
+        lines.push(`时间片: ${this.config.timeQuantum}`);
+      }
+      lines.push('');
+
+      lines.push('【甘特图】');
+      lines.push('起止时间       | 进程     | 持续');
+      lines.push('--------------|----------|-----');
+      for (const block of this.schedulingResult.ganttChart) {
+        const name = block.isIdle ? '空闲' : `P${block.processId}`;
+        const dur = block.endTime - block.startTime;
+        lines.push(`${block.startTime}-${block.endTime}          | ${name.padEnd(8)} | ${dur}`);
+      }
+      lines.push('');
+
+      lines.push('【性能指标】');
+      const r = this.schedulingResult;
+      lines.push(`平均周转时间: ${r.avgTurnaroundTime.toFixed(2)}`);
+      lines.push(`平均等待时间: ${r.avgWaitingTime.toFixed(2)}`);
+      lines.push(`平均响应时间: ${r.avgResponseTime.toFixed(2)}`);
+      lines.push(`CPU利用率: ${(r.cpuUtilization * 100).toFixed(1)}%`);
+      lines.push(`吞吐量: ${r.throughput.toFixed(4)} 个/单位时间`);
+      lines.push(`总运行时间: ${r.totalTime} 时间单位`);
+      lines.push(`上下文切换次数: ${r.contextSwitchCount}`);
+      lines.push(`CPU空闲时间片: ${r.cpuIdleTicks}`);
+      lines.push('');
+      lines.push('【进程抢占次数】');
+      for (const p of this.processes) {
+        const count = r.preemptionCounts?.get(p.id) || 0;
+        lines.push(`P${p.id}(${p.name}): ${count}`);
+      }
+    }
+
+    if (this.compareResults && this.compareMode) {
+      lines.push('【算法对比模式】');
+      lines.push('');
+      lines.push('算法            | 平均周转 | 平均等待 | 平均响应 | CPU利用率 | 吞吐量   | 上下文切换 | CPU空闲');
+      lines.push('----------------|----------|----------|----------|-----------|----------|------------|--------');
+      for (const item of this.compareResults) {
+        const r = item.result;
+        lines.push(
+          `${item.name.padEnd(16)}| ${r.avgTurnaroundTime.toFixed(2).padEnd(9)}| ${r.avgWaitingTime.toFixed(2).padEnd(9)}| ${r.avgResponseTime.toFixed(2).padEnd(9)}| ${((r.cpuUtilization * 100).toFixed(1) + '%').padEnd(10)}| ${r.throughput.toFixed(4).padEnd(9)}| ${String(r.contextSwitchCount).padEnd(11)}| ${r.cpuIdleTicks}`
+        );
+      }
+    }
+
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      this.copyToastVisible = true;
+      setTimeout(() => {
+        this.copyToastVisible = false;
+      }, 2000);
+    });
   }
 }

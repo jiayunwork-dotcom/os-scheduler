@@ -1,8 +1,22 @@
 <div class="container">
   <header class="page-header">
-    <h1>🖥️ 操作系统进程调度算法模拟器</h1>
-    <p>交互式学习工具 · 支持FCFS/SJF/SRTF/优先级/RR/MLFQ六种算法 · 实时甘特图与性能指标对比</p>
+    <div class="header-content">
+      <div>
+        <h1>🖥️ 操作系统进程调度算法模拟器</h1>
+        <p>交互式学习工具 · 支持FCFS/SJF/SRTF/优先级/RR/MLFQ六种算法 · 实时甘特图与性能指标对比</p>
+      </div>
+      <button
+        class="btn btn-export"
+        (click)="exportReport()"
+        [disabled]="!schedulingResult && !compareResults"
+        title="导出报告到剪贴板"
+      >
+        📋 导出报告
+      </button>
+    </div>
   </header>
+
+  <div class="copy-toast" *ngIf="copyToastVisible">✅ 已复制到剪贴板</div>
 
   <div class="section-grid">
     <app-process-config
@@ -49,6 +63,7 @@
             [processResults]="currentProcessResults"
             [currentTime]="currentTime"
             [animationMode]="mode === 'animation'"
+            (blockClick)="onGanttBlockClick($event)"
           ></app-gantt-chart>
         </div>
 
