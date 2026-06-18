@@ -1,0 +1,433 @@
+<div class="memory-visualizer">
+  <div class="section-header" (click)="toggleExpand()">
+    <div class="header-content">
+      <span class="toggle-icon">{{ isExpanded ? '▼' : '▶' }}</span>
+      <h2 class="section-title">🧠 内存管理可视化</h2>
+      <span class="subtitle">分页式 · 分段式 · 地址转换</span>
+    </div>
+  </div>
+
+  <div class="section-body" *ngIf="isExpanded">
+    <div class="tab-bar">
+      <button
+        class="tab-btn"
+        [class.active]="activeTab === 'paging'"
+        (click)="onTabChange('paging')"
+      >
+        📄 分页式内存管理
+      </button>
+      <button
+        class="tab-btn"
+        [class.active]="activeTab === 'segmentation'"
+        (click)="onTabChange('segmentation')"
+      >
+        📦 分段式内存管理
+      </button>
+    </div>
+
+    <ng-container *ngIf="activeTab === 'paging'">
+      <div class="config-section card">
+        <div class="card-title">⚙️ 分页配置</div>
+        <div class="config-row">
+          <div class="config-item">
+            <label>物理内存总大小</label>
+            <select [(ngModel)]="totalMemoryKB" (ngModelChange)="onTotalMemoryChange()" class="form-select">
+              <option *ngFor="let opt of memoryOptions" [ngValue]="opt">{{ opt }}KB</option>
+            </select>
+          </div>
+          <div class="config-item">
+            <label>页面大小</label>
+            <select [(ngModel)]="pageSizeKB" (ngModelChange)="onPageSizeChange()" class="form-select">
+              <option *ngFor="let opt of pageSizeOptions" [ngValue]="opt">{{ opt }}KB</option>
+            </select>
+          </div>
+          <div class="config-item">
+            <label>总页框数</label>
+            <span class="info-value">{{ totalFrames }}</span>
+          </div>
+          <div class="config-item">
+            <label>空闲页框</label>
+            <span class="info-value" [class.warning]="freeFrameCount === 0">{{ freeFrameCount }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="process-list-section card">
+        <div class="card-title">📋 进程页表配置</div>
+        <div *ngIf="processes.length === 0" class="empty-state">暂无进程</div>
+        <table *ngIf="processes.length > 0" class="process-table">
+          <thead>
+            <tr>
+              <th>进程</th>
+              <th>已分配页数</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let proc of processes"
+              [class.selected]="selectedProcessId === proc.id"
+              (click)="selectProcess(proc.id)"
+            >
+              <td>
+                <span class="process-badge" [style.backgroundColor]="proc.color">
+                  {{ proc.name }}
+                </span>
+              </td>
+              <td>
+                <ng-container *ngIf="getProcessHasPages(proc.id); else noPages">
+                  {{ getProcessPageCount(proc.id) }} 页
+                </ng-container>
+                <ng-template #noPages>
+                  <span class="text-muted">未分配</span>
+                </ng-template>
+              </td>
+              <td>
+                <button class="btn btn-small btn-secondary" (click)="openPageModal(proc.id)">
+                  页表
+                </button>
+                <button
+                  *ngIf="getProcessHasPages(proc.id)"
+                  class="btn btn-small btn-delete"
+                  (click)="releaseProcessPages(proc.id)"
+                >
+                  释放
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="visualization-grid">
+        <div class="card">
+          <div class="card-title">🗂️ 物理内存页框图</div>
+          <div class="frames-grid" *ngIf="frames.length > 0">
+            <div
+              *ngFor="let frame of frames"
+              class="frame-block"
+              [class.free]="frame.processId === null"
+              [class.allocated]="frame.processId !== null"
+              [style.backgroundColor]="frame.processId !== null ? getProcessColor(frame.processId) + 'cc' : '#e5e7eb'"
+              [title]="getFrameTooltip(frame)"
+            >
+              <div class="frame-number">{{ frame.frameNumber }}</div>
+              <div *ngIf="frame.processId !== null" class="frame-label">
+                {{ getFrameLabel(frame) }}
+              </div>
+            </div>
+          </div>
+          <div class="frames-legend">
+            <span class="legend-item">
+              <span class="legend-color free-color"></span> 空闲
+            </span>
+            <span class="legend-item">
+              <span class="legend-color allocated-color"></span> 已分配
+            </span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📖 页表 - {{ getSelectedProcessName() }}</div>
+          <div *ngIf="!selectedProcessPageInfo" class="empty-state">
+            请选择一个已分配页表的进程
+          </div>
+          <table *ngIf="selectedProcessPageInfo" class="page-table">
+            <thead>
+              <tr>
+                <th>逻辑页号</th>
+                <th>物理页框号</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let entry of selectedProcessPageInfo.pageTable">
+                <td>{{ entry.logicalPage }}</td>
+                <td>{{ entry.physicalFrame }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔍 地址转换演示 (分页)</div>
+        <div class="translation-form">
+          <div class="form-row-inline">
+            <label>逻辑地址 (十进制):</label>
+            <input
+              type="number"
+              min="0"
+              [(ngModel)]="translationLogicalAddress"
+              class="form-input addr-input"
+              placeholder="输入逻辑地址"
+            />
+            <button
+              class="btn btn-primary"
+              (click)="translatePagingAddress()"
+              [disabled]="translationLogicalAddress === null || !selectedProcessPageInfo"
+            >
+              转换
+            </button>
+          </div>
+        </div>
+        <div *ngIf="translationSteps.length > 0" class="translation-steps">
+          <div
+            *ngFor="let step of translationSteps"
+            class="step-row"
+            [class.error-step]="step.isError"
+          >
+            <span class="step-label">{{ step.label }}</span>
+            <span class="step-value">{{ step.value }}</span>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+
+    <ng-container *ngIf="activeTab === 'segmentation'">
+      <div class="config-section card">
+        <div class="card-title">⚙️ 分段配置</div>
+        <div class="config-row">
+          <div class="config-item">
+            <label>物理内存总大小</label>
+            <select [(ngModel)]="totalMemoryKB" (ngModelChange)="onTotalMemoryChange()" class="form-select">
+              <option *ngFor="let opt of memoryOptions" [ngValue]="opt">{{ opt }}KB</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="process-list-section card">
+        <div class="card-title">📋 进程段配置</div>
+        <div *ngIf="processes.length === 0" class="empty-state">暂无进程</div>
+        <table *ngIf="processes.length > 0" class="process-table">
+          <thead>
+            <tr>
+              <th>进程</th>
+              <th>段数</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let proc of processes"
+              [class.selected]="selectedProcessId === proc.id"
+              (click)="selectProcess(proc.id)"
+            >
+              <td>
+                <span class="process-badge" [style.backgroundColor]="proc.color">
+                  {{ proc.name }}
+                </span>
+              </td>
+              <td>
+                <ng-container *ngIf="getProcessHasSegments(proc.id); else noSegs">
+                  {{ getProcessSegmentCount(proc.id) }} 段
+                </ng-container>
+                <ng-template #noSegs>
+                  <span class="text-muted">未分配</span>
+                </ng-template>
+              </td>
+              <td>
+                <button class="btn btn-small btn-secondary" (click)="openSegmentModal(proc.id)">
+                  配置段
+                </button>
+                <button
+                  *ngIf="getProcessHasSegments(proc.id)"
+                  class="btn btn-small btn-delete"
+                  (click)="releaseProcessSegments(proc.id)"
+                >
+                  释放
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="visualization-grid">
+        <div class="card">
+          <div class="card-title">📊 物理内存条形图</div>
+          <div class="memory-bar-container">
+            <div class="memory-bar">
+              <div
+                *ngFor="let block of memoryBlocks"
+                class="memory-block"
+                [class.free-block]="block.isFree"
+                [class.allocated-block]="!block.isFree"
+                [style.width]="getBlockWidthPercent(block) + '%'"
+                [style.backgroundColor]="getBlockBgColor(block)"
+                [title]="getBlockTooltip(block)"
+              >
+                <div *ngIf="!block.isFree && getBlockWidthPercent(block) > 8" class="block-label">
+                  {{ getBlockLabel(block) }}
+                </div>
+                <div *ngIf="block.isFree && getBlockWidthPercent(block) > 5" class="block-label free-label">
+                  空闲({{ block.size }}KB)
+                </div>
+              </div>
+            </div>
+            <div class="memory-address-bar">
+              <span>0</span>
+              <span>{{ totalMemoryKB }}KB</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📖 段表 - {{ getSelectedProcessName() }}</div>
+          <div *ngIf="!selectedProcessSegmentInfo" class="empty-state">
+            请选择一个已配置段的进程
+          </div>
+          <table *ngIf="selectedProcessSegmentInfo" class="segment-table">
+            <thead>
+              <tr>
+                <th>段号</th>
+                <th>段名</th>
+                <th>基址</th>
+                <th>段长</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let row of getSegmentTableRows()">
+                <td>{{ row.segNumber }}</td>
+                <td>{{ row.segName }}</td>
+                <td>{{ row.base }}</td>
+                <td>{{ row.length }}KB</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔍 地址转换演示 (分段)</div>
+        <div class="translation-form">
+          <div class="form-row-inline">
+            <label>段号:</label>
+            <input
+              type="number"
+              min="0"
+              [(ngModel)]="segTranslationSegmentNumber"
+              class="form-input addr-input"
+              placeholder="段号"
+            />
+            <label>段内偏移 (KB):</label>
+            <input
+              type="number"
+              min="0"
+              [(ngModel)]="segTranslationOffset"
+              class="form-input addr-input"
+              placeholder="偏移"
+            />
+            <button
+              class="btn btn-primary"
+              (click)="translateSegmentAddress()"
+              [disabled]="segTranslationSegmentNumber === null || segTranslationOffset === null || !selectedProcessSegmentInfo"
+            >
+              转换
+            </button>
+          </div>
+        </div>
+        <div *ngIf="segTranslationSteps.length > 0" class="translation-steps">
+          <div
+            *ngFor="let step of segTranslationSteps"
+            class="step-row"
+            [class.error-step]="step.isError"
+          >
+            <span class="step-label">{{ step.label }}</span>
+            <span class="step-value">{{ step.value }}</span>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+  </div>
+
+  <div class="modal-overlay" *ngIf="pageModalVisible" (click)="closePageModal()">
+    <div class="modal-content" (click)="stopPropagation($event)">
+      <div class="modal-header">
+        <h3>配置页表 - {{ getProcessById(pageModalProcessId!)?.name }}</h3>
+        <button class="close-btn" (click)="closePageModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <h4>逻辑页数</h4>
+          <p class="form-hint">最大可分配 {{ getMaxPageCount() }} 页（总页框数的一半）</p>
+          <input
+            type="number"
+            min="1"
+            [max]="getMaxPageCount()"
+            [(ngModel)]="pageModalPageCount"
+            class="form-input"
+          />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closePageModal()">取消</button>
+        <button class="btn btn-primary" (click)="savePageModal()">分配</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" *ngIf="segmentModalVisible" (click)="closeSegmentModal()">
+    <div class="modal-content modal-wide" (click)="stopPropagation($event)">
+      <div class="modal-header">
+        <h3>配置段 - {{ getProcessById(segmentModalProcessId!)?.name }}</h3>
+        <button class="close-btn" (click)="closeSegmentModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <h4>段列表</h4>
+          <table *ngIf="segmentModalSegments.length > 0" class="segment-edit-table">
+            <thead>
+              <tr>
+                <th>段名</th>
+                <th>段长 (KB)</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let seg of segmentModalSegments; let i = index">
+                <td>{{ seg.segmentName }}</td>
+                <td>{{ seg.segmentLength }}</td>
+                <td>
+                  <button class="btn btn-small btn-delete" (click)="removeSegmentRow(i)">删除</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div *ngIf="segmentModalSegments.length === 0" class="empty-state">暂未添加段</div>
+        </div>
+        <div class="form-section add-segment-form">
+          <h4>添加段</h4>
+          <div class="add-row">
+            <input
+              type="text"
+              [(ngModel)]="newSegmentName"
+              placeholder="段名(如:代码段)"
+              class="form-input"
+            />
+            <input
+              type="number"
+              min="1"
+              max="128"
+              [(ngModel)]="newSegmentLength"
+              class="form-input length-input"
+              placeholder="段长(KB)"
+            />
+            <button
+              class="btn btn-primary"
+              (click)="addSegmentRow()"
+              [disabled]="segmentModalSegments.length >= 8"
+            >
+              + 添加
+            </button>
+          </div>
+          <p class="form-hint">段长范围: 1-128KB, 最多8段</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeSegmentModal()">取消</button>
+        <button class="btn btn-primary" (click)="saveSegmentModal()" [disabled]="segmentModalSegments.length === 0">分配</button>
+      </div>
+    </div>
+  </div>
+</div>

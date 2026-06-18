@@ -11,8 +11,10 @@ import { ReadyQueueComponent } from './components/ready-queue/ready-queue.compon
 import { MetricsPanelComponent } from './components/metrics-panel/metrics-panel.component';
 import { AnimationControlsComponent } from './components/animation-controls/animation-controls.component';
 import { DeadlockDetectorComponent } from './components/deadlock-detector/deadlock-detector.component';
+import { MemoryVisualizerComponent } from './components/memory-visualizer/memory-visualizer.component';
 import { SchedulingService } from './services/scheduling.service';
 import { DeadlockService } from './services/deadlock.service';
+import { MemoryService } from './services/memory.service';
 
 @NgModule({
   declarations: [AppComponent],
@@ -28,8 +30,9 @@ import { DeadlockService } from './services/deadlock.service';
     MetricsPanelComponent,
     AnimationControlsComponent,
     DeadlockDetectorComponent,
+    MemoryVisualizerComponent,
   ],
-  providers: [SchedulingService, DeadlockService],
+  providers: [SchedulingService, DeadlockService, MemoryService],
   bootstrap: [AppComponent],
 })
 export class AppModule {}
