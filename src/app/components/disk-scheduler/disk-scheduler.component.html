@@ -1,0 +1,261 @@
+<div class="disk-scheduler">
+  <div class="section-header" (click)="toggleExpand()">
+    <div class="header-content">
+      <span class="toggle-icon">{{ isExpanded ? '▼' : '▶' }}</span>
+      <h2 class="section-title">💾 磁盘调度算法可视化</h2>
+      <span class="subtitle">FCFS · SSTF · SCAN · C-SCAN · LOOK</span>
+    </div>
+  </div>
+
+  <div class="section-body" *ngIf="isExpanded">
+    <div *ngIf="warningMessage" class="warning-banner">
+      ⚠️ {{ warningMessage }}
+    </div>
+
+    <div class="config-section card">
+      <div class="card-title">⚙️ 磁盘参数配置</div>
+      <div class="config-row">
+        <div class="config-item">
+          <label>磁道总数</label>
+          <select [(ngModel)]="totalTracks" (change)="onTotalTracksChange()" class="form-select">
+            <option *ngFor="let opt of totalTracksOptions" [ngValue]="opt">{{ opt }}</option>
+          </select>
+        </div>
+        <div class="config-item">
+          <label>磁头初始位置 (0-{{ totalTracks - 1 }})</label>
+          <input
+            type="number"
+            [min]="0"
+            [max]="totalTracks - 1"
+            [(ngModel)]="initialPosition"
+            (change)="onInitialPositionChange()"
+            class="form-input"
+          />
+        </div>
+        <div class="config-item">
+          <label>磁头移动方向</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="diskDirection" value="inward" [(ngModel)]="direction" />
+              向内
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="diskDirection" value="outward" [(ngModel)]="direction" />
+              向外
+            </label>
+          </div>
+          <div class="direction-hint">仅 SCAN / C-SCAN / LOOK 算法使用</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="request-section card">
+      <div class="card-title">📋 请求队列配置</div>
+      <div class="request-controls">
+        <div class="request-input-row">
+          <input
+            type="text"
+            placeholder="输入磁道号，用逗号分隔（如: 98, 183, 37, 122）"
+            [(ngModel)]="requestInput"
+            class="form-input request-input"
+            (keyup.enter)="addRequests()"
+            [disabled]="processCount === 0"
+          />
+          <button
+            class="btn btn-primary"
+            (click)="addRequests()"
+            [disabled]="processCount === 0 || !requestInput.trim()"
+          >
+            添加
+          </button>
+          <button
+            class="btn btn-secondary"
+            (click)="generateRandomRequests()"
+            [disabled]="processCount === 0"
+          >
+            🎲 随机生成
+          </button>
+          <button
+            class="btn btn-danger"
+            (click)="clearRequests()"
+            [disabled]="requests.length === 0"
+          >
+            清空
+          </button>
+        </div>
+      </div>
+
+      <div class="request-tags" *ngIf="requests.length > 0">
+        <span
+          *ngFor="let req of requests; let i = index"
+          class="request-tag"
+          title="点击删除"
+          (click)="removeRequest(i)"
+        >
+          {{ req }}
+          <span class="tag-close">✕</span>
+        </span>
+      </div>
+      <div *ngIf="requests.length === 0" class="empty-requests">
+        暂无请求，请添加磁道请求
+      </div>
+    </div>
+
+    <div class="algorithm-section card">
+      <div class="card-title">🧮 调度算法</div>
+      <div class="algorithm-controls">
+        <div class="algorithm-select-wrap">
+          <label>选择算法:</label>
+          <select [(ngModel)]="algorithm" class="form-select algorithm-select">
+            <option *ngFor="let name of algorithmNames | keyvalue" [ngValue]="name.key">
+              {{ name.value }}
+            </option>
+          </select>
+        </div>
+        <button
+          class="btn btn-primary btn-lg"
+          (click)="runSchedule()"
+          [disabled]="requests.length === 0 || compareMode"
+        >
+          ▶ 执行调度
+        </button>
+        <div class="compare-mode-wrap">
+          <label class="checkbox-wrapper">
+            <input type="checkbox" [(ngModel)]="compareMode" />
+            算法对比模式
+          </label>
+          <button
+            *ngIf="compareMode"
+            class="btn btn-success btn-lg"
+            (click)="runCompare()"
+            [disabled]="requests.length === 0"
+          >
+            📊 对比全部算法
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <ng-container *ngIf="scheduleResult && !compareMode">
+      <div class="card">
+        <div class="card-title">📈 磁头移动轨迹图</div>
+        <div class="canvas-wrapper">
+          <canvas
+            #trackCanvas
+            [width]="canvasWidth"
+            [height]="canvasHeight"
+            class="track-canvas"
+          ></canvas>
+        </div>
+        <div class="chart-legend">
+          <span class="legend-item">
+            <span class="legend-dot" style="background: #10b981;"></span> 初始位置
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background: #667eea;"></span> 服务位置
+          </span>
+          <span class="legend-item">
+            <span class="legend-arrow">→</span> 移动方向
+          </span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📋 调度过程表格</div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>步骤</th>
+                <th>当前磁头位置</th>
+                <th>下一个磁道</th>
+                <th>移动距离</th>
+                <th>移动方向</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let step of scheduleResult.steps">
+                <td>{{ step.step }}</td>
+                <td>{{ step.currentPosition }}</td>
+                <td>{{ step.nextTrack }}</td>
+                <td>{{ step.moveDistance }}</td>
+                <td>{{ getDirectionText(step.direction) }}</td>
+              </tr>
+              <tr class="summary-row">
+                <td colspan="3"><strong>汇总</strong></td>
+                <td><strong>总移动距离: {{ scheduleResult.totalMoveDistance }}</strong></td>
+                <td><strong>平均寻道: {{ scheduleResult.averageSeekLength.toFixed(2) }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </ng-container>
+
+    <ng-container *ngIf="compareResults && compareMode">
+      <div class="card">
+        <div class="card-title">🏆 算法对比 - 总移动距离柱状图</div>
+        <div class="canvas-wrapper">
+          <canvas
+            #compareCanvas
+            [width]="compareCanvasWidth"
+            [height]="compareCanvasHeight"
+            class="compare-canvas"
+          ></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📊 算法对比结果（按效率排序）</div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>算法</th>
+                <th>总移动距离</th>
+                <th>平均寻道长度</th>
+                <th>相对效率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                *ngFor="let item of sortedCompareResults; let i = index"
+                [class.best-row]="i === 0"
+              >
+                <td>
+                  <span class="rank-badge" [style.background]="getAlgorithmColor(item.name)">
+                    {{ i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1 }}
+                  </span>
+                </td>
+                <td>
+                  <span
+                    class="algo-badge"
+                    [style.background]="getAlgorithmColor(item.name) + '20'"
+                    [style.color]="getAlgorithmColor(item.name)"
+                  >
+                    {{ item.name }}
+                  </span>
+                </td>
+                <td><strong>{{ item.result.totalMoveDistance }}</strong></td>
+                <td>{{ item.result.averageSeekLength.toFixed(2) }}</td>
+                <td>
+                  <span *ngIf="i === 0" class="best-label">最优</span>
+                  <span *ngIf="i > 0">
+                    +{{
+                      (
+                        ((item.result.totalMoveDistance - sortedCompareResults[0].result.totalMoveDistance) /
+                          sortedCompareResults[0].result.totalMoveDistance) *
+                        100
+                      ).toFixed(1)
+                    }}%
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </ng-container>
+  </div>
+</div>

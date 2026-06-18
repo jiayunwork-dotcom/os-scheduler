@@ -12,9 +12,11 @@ import { MetricsPanelComponent } from './components/metrics-panel/metrics-panel.
 import { AnimationControlsComponent } from './components/animation-controls/animation-controls.component';
 import { DeadlockDetectorComponent } from './components/deadlock-detector/deadlock-detector.component';
 import { MemoryVisualizerComponent } from './components/memory-visualizer/memory-visualizer.component';
+import { DiskSchedulerComponent } from './components/disk-scheduler/disk-scheduler.component';
 import { SchedulingService } from './services/scheduling.service';
 import { DeadlockService } from './services/deadlock.service';
 import { MemoryService } from './services/memory.service';
+import { DiskService } from './services/disk.service';
 
 @NgModule({
   declarations: [AppComponent],
@@ -31,8 +33,9 @@ import { MemoryService } from './services/memory.service';
     AnimationControlsComponent,
     DeadlockDetectorComponent,
     MemoryVisualizerComponent,
+    DiskSchedulerComponent,
   ],
-  providers: [SchedulingService, DeadlockService, MemoryService],
+  providers: [SchedulingService, DeadlockService, MemoryService, DiskService],
   bootstrap: [AppComponent],
 })
 export class AppModule {}
