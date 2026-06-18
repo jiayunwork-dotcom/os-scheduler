@@ -93,15 +93,9 @@
                 </span>
               </td>
               <td>
-                <ng-container *ngIf="isProcessPendingReclaim(proc.id)">
-                  <span class="status-badge status-pending-reclaim" title="待回收">待回收</span>
-                </ng-container>
-                <ng-container *ng-else-if="isProcessTerminated(proc.id)">
-                  <span class="status-badge status-terminated" title="已结束">已结束</span>
-                </ng-container>
-                <ng-container *ng-else>
-                  <span class="status-badge status-active">运行中</span>
-                </ng-container>
+                <span *ngIf="isProcessPendingReclaim(proc.id)" class="status-badge status-pending-reclaim" title="待回收">待回收</span>
+                <span *ngIf="!isProcessPendingReclaim(proc.id) && isProcessTerminated(proc.id)" class="status-badge status-terminated" title="已结束">已结束</span>
+                <span *ngIf="!isProcessPendingReclaim(proc.id) && !isProcessTerminated(proc.id)" class="status-badge status-active">运行中</span>
               </td>
               <td>
                 <ng-container *ngIf="getProcessHasPages(proc.id); else noPages">
@@ -133,7 +127,7 @@
           <div class="card-title">🗂️ 物理内存页框图</div>
           <div class="frames-grid" *ngIf="frames.length > 0">
             <div
-              *ngFor="let frame of frames"
+              *ngFor="let frame of frames; trackBy: trackByFrameNumber"
               class="frame-block"
               [class.free]="frame.processId === null"
               [class.allocated]="frame.processId !== null"
@@ -328,15 +322,9 @@
                 </span>
               </td>
               <td>
-                <ng-container *ngIf="isProcessPendingReclaim(proc.id)">
-                  <span class="status-badge status-pending-reclaim">待回收</span>
-                </ng-container>
-                <ng-container *ng-else-if="isProcessTerminated(proc.id)">
-                  <span class="status-badge status-terminated">已结束</span>
-                </ng-container>
-                <ng-container *ng-else>
-                  <span class="status-badge status-active">运行中</span>
-                </ng-container>
+                <span *ngIf="isProcessPendingReclaim(proc.id)" class="status-badge status-pending-reclaim">待回收</span>
+                <span *ngIf="!isProcessPendingReclaim(proc.id) && isProcessTerminated(proc.id)" class="status-badge status-terminated">已结束</span>
+                <span *ngIf="!isProcessPendingReclaim(proc.id) && !isProcessTerminated(proc.id)" class="status-badge status-active">运行中</span>
               </td>
               <td>
                 <ng-container *ngIf="getProcessHasSegments(proc.id); else noSegs">
@@ -369,7 +357,7 @@
           <div class="memory-bar-container">
             <div class="memory-bar">
               <div
-                *ngFor="let block of memoryBlocks"
+                *ngFor="let block of memoryBlocks; trackBy: trackByBlockAddress"
                 class="memory-block"
                 [class.free-block]="block.isFree"
                 [class.allocated-block]="!block.isFree"
@@ -510,7 +498,7 @@
       </div>
       <div *ngIf="snapshots.length > 0" class="snapshot-list">
         <div
-          *ngFor="let snap of snapshots; let i = index"
+          *ngFor="let snap of snapshots; let i = index; trackBy: trackBySnapshotName"
           class="snapshot-item"
           [class.selected]="isSnapshotSelected(i)"
           (click)="toggleSnapshotSelection(i)"

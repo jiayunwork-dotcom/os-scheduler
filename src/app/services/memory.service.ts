@@ -357,8 +357,8 @@ export class MemoryService {
   simulateLRU(accessSequence: number[], frameCount: number, totalPages: number): PageReplacementResult {
     const steps: PageReplacementStep[] = [];
     const frames: number[] = [];
+    const lruQueue: number[] = [];
     let faultCount = 0;
-    const useOrder: number[] = [];
 
     for (const page of accessSequence) {
       if (page < 0 || page >= totalPages) {
@@ -367,13 +367,12 @@ export class MemoryService {
         continue;
       }
 
-      const useIdx = useOrder.indexOf(page);
-      if (useIdx !== -1) {
-        useOrder.splice(useIdx, 1);
-      }
-      useOrder.push(page);
-
       if (frames.includes(page)) {
+        const queueIdx = lruQueue.indexOf(page);
+        if (queueIdx !== -1) {
+          lruQueue.splice(queueIdx, 1);
+        }
+        lruQueue.push(page);
         steps.push({ accessPage: page, framesContent: [...frames], hit: true, evictedPage: null });
         continue;
       }
@@ -384,18 +383,12 @@ export class MemoryService {
       if (frames.length < frameCount) {
         frames.push(page);
       } else {
-        let lruPage = useOrder[0];
-        for (const u of useOrder) {
-          if (frames.includes(u)) {
-            lruPage = u;
-            break;
-          }
-        }
-        evictedPage = lruPage;
-        const idx = frames.indexOf(lruPage);
+        evictedPage = lruQueue.shift()!;
+        const idx = frames.indexOf(evictedPage);
         frames[idx] = page;
       }
 
+      lruQueue.push(page);
       steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage });
     }
 

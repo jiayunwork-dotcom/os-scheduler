@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, OnDestroy, OnInit, SimpleChanges } from '@angular/core';
+import { Component, Input, OnChanges, OnDestroy, OnInit, SimpleChanges, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Process } from '../../models/process.model';
@@ -77,7 +77,10 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
 
   pendingReclaimPids: Set<number> = new Set();
 
-  constructor(private memoryService: MemoryService) {}
+  constructor(
+    private memoryService: MemoryService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.initPagingIfNeeded();
@@ -594,22 +597,46 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
 
     this.totalMemoryKB = snapshot.totalMemoryKB;
     this.pageSizeKB = snapshot.pageSizeKB;
-    this.frames = snapshot.frames.map(f => ({ ...f }));
-    this.processPages = snapshot.processPages.map(pp => ({
+
+    const newFrames = snapshot.frames.map(f => ({ ...f }));
+    const newProcessPages = snapshot.processPages.map(pp => ({
       processId: pp.processId,
       logicalPageCount: pp.logicalPageCount,
       pageTable: pp.pageTable.map(e => ({ ...e })),
     }));
-    this.memoryBlocks = snapshot.memoryBlocks.map(b => ({ ...b }));
-    this.processSegments = snapshot.processSegments.map(ps => ({
+    const newMemoryBlocks = snapshot.memoryBlocks.map(b => ({ ...b }));
+    const newProcessSegments = snapshot.processSegments.map(ps => ({
       processId: ps.processId,
       segments: ps.segments.map(s => ({ ...s })),
     }));
 
-    this.translationSteps = [];
-    this.segTranslationSteps = [];
-    this.replacementResult = null;
-    this.fragmentAnalysis = null;
+    this.frames = [];
+    this.processPages = [];
+    this.memoryBlocks = [];
+    this.processSegments = [];
+    this.pendingReclaimPids.clear();
+
+    setTimeout(() => {
+      this.frames = newFrames;
+      this.processPages = newProcessPages;
+      this.memoryBlocks = newMemoryBlocks;
+      this.processSegments = newProcessSegments;
+
+      this.translationSteps = [];
+      this.segTranslationSteps = [];
+      this.replacementResult = null;
+      this.fragmentAnalysis = null;
+
+      if (this.selectedProcessId !== null) {
+        const pidsInPaging = this.processPages.map(p => p.processId);
+        const pidsInSeg = this.processSegments.map(p => p.processId);
+        if (!pidsInPaging.includes(this.selectedProcessId) && !pidsInSeg.includes(this.selectedProcessId)) {
+          this.selectedProcessId = this.processes.length > 0 ? this.processes[0].id : null;
+        }
+      }
+
+      this.cdr.detectChanges();
+    }, 0);
   }
 
   deleteSnapshot(index: number): void {
@@ -680,5 +707,17 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
     const m = d.getMinutes().toString().padStart(2, '0');
     const s = d.getSeconds().toString().padStart(2, '0');
     return `${h}:${m}:${s}`;
+  }
+
+  trackByFrameNumber(index: number, frame: FrameInfo): number {
+    return frame.frameNumber;
+  }
+
+  trackByBlockAddress(index: number, block: MemoryBlock): number {
+    return block.startAddress;
+  }
+
+  trackBySnapshotName(index: number, snapshot: MemorySnapshot): string {
+    return snapshot.name;
   }
 }
