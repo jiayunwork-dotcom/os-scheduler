@@ -9,20 +9,35 @@
 
   <div class="section-body" *ngIf="isExpanded">
     <div class="tab-bar">
-      <button
-        class="tab-btn"
-        [class.active]="activeTab === 'paging'"
-        (click)="onTabChange('paging')"
-      >
-        📄 分页式内存管理
-      </button>
-      <button
-        class="tab-btn"
-        [class.active]="activeTab === 'segmentation'"
-        (click)="onTabChange('segmentation')"
-      >
-        📦 分段式内存管理
-      </button>
+      <div class="tab-buttons">
+        <button
+          class="tab-btn"
+          [class.active]="activeTab === 'paging'"
+          (click)="onTabChange('paging')"
+        >
+          📄 分页式内存管理
+        </button>
+        <button
+          class="tab-btn"
+          [class.active]="activeTab === 'segmentation'"
+          (click)="onTabChange('segmentation')"
+        >
+          📦 分段式内存管理
+        </button>
+      </div>
+      <div class="tab-actions">
+        <button class="btn btn-snapshot" (click)="saveSnapshot()" title="保存当前内存状态快照">
+          📸 保存快照
+        </button>
+        <button
+          *ngIf="hasPendingReclaims"
+          class="btn btn-reclaim"
+          (click)="reclaimTerminatedProcesses()"
+          title="回收已结束进程占用的内存"
+        >
+          ♻️ 回收已结束进程内存
+        </button>
+      </div>
     </div>
 
     <ng-container *ngIf="activeTab === 'paging'">
@@ -59,6 +74,7 @@
           <thead>
             <tr>
               <th>进程</th>
+              <th>状态</th>
               <th>已分配页数</th>
               <th>操作</th>
             </tr>
@@ -67,12 +83,25 @@
             <tr
               *ngFor="let proc of processes"
               [class.selected]="selectedProcessId === proc.id"
+              [class.terminated-row]="isProcessTerminated(proc.id)"
+              [class.pending-reclaim-row]="isProcessPendingReclaim(proc.id)"
               (click)="selectProcess(proc.id)"
             >
               <td>
                 <span class="process-badge" [style.backgroundColor]="proc.color">
                   {{ proc.name }}
                 </span>
+              </td>
+              <td>
+                <ng-container *ngIf="isProcessPendingReclaim(proc.id)">
+                  <span class="status-badge status-pending-reclaim" title="待回收">待回收</span>
+                </ng-container>
+                <ng-container *ng-else-if="isProcessTerminated(proc.id)">
+                  <span class="status-badge status-terminated" title="已结束">已结束</span>
+                </ng-container>
+                <ng-container *ng-else>
+                  <span class="status-badge status-active">运行中</span>
+                </ng-container>
               </td>
               <td>
                 <ng-container *ngIf="getProcessHasPages(proc.id); else noPages">
@@ -108,6 +137,7 @@
               class="frame-block"
               [class.free]="frame.processId === null"
               [class.allocated]="frame.processId !== null"
+              [class.pending-reclaim-frame]="isFramePendingReclaim(frame)"
               [style.backgroundColor]="frame.processId !== null ? getProcessColor(frame.processId) + 'cc' : '#e5e7eb'"
               [title]="getFrameTooltip(frame)"
             >
@@ -123,6 +153,9 @@
             </span>
             <span class="legend-item">
               <span class="legend-color allocated-color"></span> 已分配
+            </span>
+            <span class="legend-item" *ngIf="hasPendingReclaims">
+              <span class="legend-color reclaim-color"></span> 待回收
             </span>
           </div>
         </div>
@@ -181,6 +214,79 @@
           </div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-title">🔄 页面置换模拟</div>
+        <div class="replacement-config">
+          <div class="form-row-inline">
+            <label>物理页框上限:</label>
+            <input
+              type="number"
+              [min]="getReplacementMinFrameLimit()"
+              [max]="getReplacementMaxFrameLimit()"
+              [(ngModel)]="replacementFrameLimit"
+              class="form-input small-input"
+            />
+            <label>访问序列 (逗号分隔):</label>
+            <input
+              type="text"
+              [(ngModel)]="replacementAccessSequence"
+              class="form-input seq-input"
+              placeholder="如: 0,1,2,3,0,1,4,0,1,2,3,4"
+            />
+          </div>
+          <div class="form-row-inline">
+            <label>置换算法:</label>
+            <select [(ngModel)]="replacementAlgorithm" class="form-select">
+              <option value="FIFO">FIFO</option>
+              <option value="LRU">LRU</option>
+              <option value="OPT">OPT (最优)</option>
+            </select>
+            <button
+              class="btn btn-primary"
+              (click)="startReplacementSimulation()"
+              [disabled]="!selectedProcessPageInfo"
+            >
+              开始模拟
+            </button>
+          </div>
+        </div>
+
+        <div *ngIf="replacementResult" class="replacement-result">
+          <div class="replacement-summary">
+            <span class="summary-item">算法: <strong>{{ replacementResult.algorithm }}</strong></span>
+            <span class="summary-item">缺页次数: <strong [class.fault-highlight]="true">{{ replacementResult.faultCount }}</strong></span>
+            <span class="summary-item">缺页率: <strong [class.fault-highlight]="replacementResult.faultRate > 0.5">{{ (replacementResult.faultRate * 100).toFixed(1) }}%</strong></span>
+          </div>
+          <div class="replacement-table-wrapper">
+            <table class="replacement-table">
+              <thead>
+                <tr>
+                  <th>步骤</th>
+                  <th>访问页号</th>
+                  <th>页框内容</th>
+                  <th>命中/缺页</th>
+                  <th>换出页号</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let step of replacementResult.steps; let i = index"
+                    [class.hit-row]="step.hit"
+                    [class.miss-row]="!step.hit">
+                  <td>{{ i + 1 }}</td>
+                  <td>{{ step.accessPage }}</td>
+                  <td class="mono">{{ step.framesContent.join(', ') }}</td>
+                  <td>
+                    <span *ngIf="step.hit" class="hit-badge">命中</span>
+                    <span *ngIf="!step.hit" class="miss-badge">缺页</span>
+                  </td>
+                  <td>{{ step.evictedPage !== null ? step.evictedPage : '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </ng-container>
 
     <ng-container *ngIf="activeTab === 'segmentation'">
@@ -203,6 +309,7 @@
           <thead>
             <tr>
               <th>进程</th>
+              <th>状态</th>
               <th>段数</th>
               <th>操作</th>
             </tr>
@@ -211,12 +318,25 @@
             <tr
               *ngFor="let proc of processes"
               [class.selected]="selectedProcessId === proc.id"
+              [class.terminated-row]="isProcessTerminated(proc.id)"
+              [class.pending-reclaim-row]="isProcessPendingReclaim(proc.id)"
               (click)="selectProcess(proc.id)"
             >
               <td>
                 <span class="process-badge" [style.backgroundColor]="proc.color">
                   {{ proc.name }}
                 </span>
+              </td>
+              <td>
+                <ng-container *ngIf="isProcessPendingReclaim(proc.id)">
+                  <span class="status-badge status-pending-reclaim">待回收</span>
+                </ng-container>
+                <ng-container *ng-else-if="isProcessTerminated(proc.id)">
+                  <span class="status-badge status-terminated">已结束</span>
+                </ng-container>
+                <ng-container *ng-else>
+                  <span class="status-badge status-active">运行中</span>
+                </ng-container>
               </td>
               <td>
                 <ng-container *ngIf="getProcessHasSegments(proc.id); else noSegs">
@@ -253,6 +373,7 @@
                 class="memory-block"
                 [class.free-block]="block.isFree"
                 [class.allocated-block]="!block.isFree"
+                [class.pending-reclaim-block]="isBlockPendingReclaim(block)"
                 [style.width]="getBlockWidthPercent(block) + '%'"
                 [style.backgroundColor]="getBlockBgColor(block)"
                 [title]="getBlockTooltip(block)"
@@ -338,7 +459,137 @@
           </div>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-title">🔧 碎片分析</div>
+        <div class="fragment-actions">
+          <button class="btn btn-primary" (click)="analyzeFragments()">分析碎片</button>
+          <button
+            *ngIf="canCompact()"
+            class="btn btn-warning"
+            (click)="executeCompaction()"
+          >
+            执行紧凑
+          </button>
+        </div>
+        <div *ngIf="fragmentAnalysis" class="fragment-result">
+          <div class="fragment-stats">
+            <div class="stat-item">
+              <span class="stat-label">外部碎片总量</span>
+              <span class="stat-value">{{ fragmentAnalysis.totalFragmentSize }} KB</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">空闲区块数</span>
+              <span class="stat-value">{{ fragmentAnalysis.freeBlockCount }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">最大空闲块</span>
+              <span class="stat-value">{{ fragmentAnalysis.maxFreeBlockSize }} KB</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">碎片率</span>
+              <span class="stat-value" [class.fault-highlight]="fragmentAnalysis.fragmentationRate > 0.5">
+                {{ (fragmentAnalysis.fragmentationRate * 100).toFixed(1) }}%
+              </span>
+            </div>
+          </div>
+          <div *ngIf="fragmentAnalysis.freeBlockCount <= 1" class="compact-hint">
+            ✅ 碎片已合并，无需紧凑
+          </div>
+        </div>
+        <div *ngIf="!fragmentAnalysis" class="empty-state">
+          点击"分析碎片"查看碎片状况
+        </div>
+      </div>
     </ng-container>
+
+    <div class="card" *ngIf="snapshots.length > 0 || true">
+      <div class="card-title">📸 内存快照</div>
+      <div *ngIf="snapshots.length === 0" class="empty-state">
+        点击顶部"保存快照"按钮保存当前内存状态
+      </div>
+      <div *ngIf="snapshots.length > 0" class="snapshot-list">
+        <div
+          *ngFor="let snap of snapshots; let i = index"
+          class="snapshot-item"
+          [class.selected]="isSnapshotSelected(i)"
+          (click)="toggleSnapshotSelection(i)"
+        >
+          <div class="snapshot-info">
+            <span class="snapshot-name">{{ snap.name }}</span>
+            <span class="snapshot-time">{{ formatTimestamp(snap.timestamp) }}</span>
+          </div>
+          <div class="snapshot-actions">
+            <button class="btn btn-small btn-secondary" (click)="restoreSnapshot(i); $event.stopPropagation()">
+              恢复
+            </button>
+            <button class="btn btn-small btn-delete" (click)="deleteSnapshot(i); $event.stopPropagation()">
+              删除
+            </button>
+          </div>
+        </div>
+      </div>
+      <div *ngIf="snapshots.length > 0" class="snapshot-compare">
+        <button
+          class="btn btn-primary"
+          (click)="compareSelectedSnapshots()"
+          [disabled]="selectedSnapshotIndex1 === null || selectedSnapshotIndex2 === null"
+        >
+          对比选中快照
+        </button>
+        <span *ngIf="selectedSnapshotIndex1 !== null && selectedSnapshotIndex2 === null" class="compare-hint">
+          请再选择一个快照进行对比
+        </span>
+      </div>
+
+      <div *ngIf="snapshotDiff" class="snapshot-diff-result">
+        <div class="card-title">📊 快照对比结果</div>
+        <table class="diff-table">
+          <thead>
+            <tr>
+              <th>对比项</th>
+              <th>详情</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>分页变化的进程</td>
+              <td>
+                <ng-container *ngIf="snapshotDiff.pagingChangedProcessIds.length === 0">无变化</ng-container>
+                <span *ngFor="let pid of snapshotDiff.pagingChangedProcessIds" class="diff-badge">
+                  {{ getProcessNameById(pid) }}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td>分段变化的进程</td>
+              <td>
+                <ng-container *ngIf="snapshotDiff.segmentationChangedProcessIds.length === 0">无变化</ng-container>
+                <span *ngFor="let pid of snapshotDiff.segmentationChangedProcessIds" class="diff-badge">
+                  {{ getProcessNameById(pid) }}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td>页框占用差异</td>
+              <td>
+                <span *ngIf="snapshotDiff.frameOccupancyDiff > 0" class="diff-increase">+{{ snapshotDiff.frameOccupancyDiff }}</span>
+                <span *ngIf="snapshotDiff.frameOccupancyDiff < 0" class="diff-decrease">{{ snapshotDiff.frameOccupancyDiff }}</span>
+                <span *ngIf="snapshotDiff.frameOccupancyDiff === 0">无变化</span>
+              </td>
+            </tr>
+            <tr>
+              <td>空闲内存变化</td>
+              <td>
+                <span *ngIf="snapshotDiff.freeMemoryDiff > 0" class="diff-increase">+{{ snapshotDiff.freeMemoryDiff }} KB</span>
+                <span *ngIf="snapshotDiff.freeMemoryDiff < 0" class="diff-decrease">{{ snapshotDiff.freeMemoryDiff }} KB</span>
+                <span *ngIf="snapshotDiff.freeMemoryDiff === 0">无变化</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <div class="modal-overlay" *ngIf="pageModalVisible" (click)="closePageModal()">

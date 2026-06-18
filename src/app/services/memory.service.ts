@@ -8,6 +8,10 @@ import {
   SegmentEntry,
   MemoryBlock,
   SegmentAddressTranslationStep,
+  PageReplacementStep,
+  PageReplacementResult,
+  FragmentAnalysis,
+  SnapshotDiff,
 } from '../models/memory.model';
 
 @Injectable({ providedIn: 'root' })
@@ -311,5 +315,254 @@ export class MemoryService {
 
   initMemoryBlocks(totalMemoryKB: number): MemoryBlock[] {
     return [{ startAddress: 0, size: totalMemoryKB, processId: null, segmentName: null, isFree: true }];
+  }
+
+  simulateFIFO(accessSequence: number[], frameCount: number, totalPages: number): PageReplacementResult {
+    const steps: PageReplacementStep[] = [];
+    const frames: number[] = [];
+    let faultCount = 0;
+    const queue: number[] = [];
+
+    for (const page of accessSequence) {
+      if (page < 0 || page >= totalPages) {
+        steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage: null });
+        faultCount++;
+        continue;
+      }
+
+      if (frames.includes(page)) {
+        steps.push({ accessPage: page, framesContent: [...frames], hit: true, evictedPage: null });
+        continue;
+      }
+
+      faultCount++;
+      let evictedPage: number | null = null;
+
+      if (frames.length < frameCount) {
+        frames.push(page);
+        queue.push(page);
+      } else {
+        evictedPage = queue.shift()!;
+        const idx = frames.indexOf(evictedPage);
+        frames[idx] = page;
+        queue.push(page);
+      }
+
+      steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage });
+    }
+
+    return { steps, faultCount, faultRate: accessSequence.length > 0 ? faultCount / accessSequence.length : 0, algorithm: 'FIFO' };
+  }
+
+  simulateLRU(accessSequence: number[], frameCount: number, totalPages: number): PageReplacementResult {
+    const steps: PageReplacementStep[] = [];
+    const frames: number[] = [];
+    let faultCount = 0;
+    const useOrder: number[] = [];
+
+    for (const page of accessSequence) {
+      if (page < 0 || page >= totalPages) {
+        steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage: null });
+        faultCount++;
+        continue;
+      }
+
+      const useIdx = useOrder.indexOf(page);
+      if (useIdx !== -1) {
+        useOrder.splice(useIdx, 1);
+      }
+      useOrder.push(page);
+
+      if (frames.includes(page)) {
+        steps.push({ accessPage: page, framesContent: [...frames], hit: true, evictedPage: null });
+        continue;
+      }
+
+      faultCount++;
+      let evictedPage: number | null = null;
+
+      if (frames.length < frameCount) {
+        frames.push(page);
+      } else {
+        let lruPage = useOrder[0];
+        for (const u of useOrder) {
+          if (frames.includes(u)) {
+            lruPage = u;
+            break;
+          }
+        }
+        evictedPage = lruPage;
+        const idx = frames.indexOf(lruPage);
+        frames[idx] = page;
+      }
+
+      steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage });
+    }
+
+    return { steps, faultCount, faultRate: accessSequence.length > 0 ? faultCount / accessSequence.length : 0, algorithm: 'LRU' };
+  }
+
+  simulateOPT(accessSequence: number[], frameCount: number, totalPages: number): PageReplacementResult {
+    const steps: PageReplacementStep[] = [];
+    const frames: number[] = [];
+    let faultCount = 0;
+
+    for (let i = 0; i < accessSequence.length; i++) {
+      const page = accessSequence[i];
+
+      if (page < 0 || page >= totalPages) {
+        steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage: null });
+        faultCount++;
+        continue;
+      }
+
+      if (frames.includes(page)) {
+        steps.push({ accessPage: page, framesContent: [...frames], hit: true, evictedPage: null });
+        continue;
+      }
+
+      faultCount++;
+      let evictedPage: number | null = null;
+
+      if (frames.length < frameCount) {
+        frames.push(page);
+      } else {
+        let farthestUse = -1;
+        let victimPage = frames[0];
+
+        for (const f of frames) {
+          let nextUse = -1;
+          for (let j = i + 1; j < accessSequence.length; j++) {
+            if (accessSequence[j] === f) {
+              nextUse = j;
+              break;
+            }
+          }
+
+          if (nextUse === -1) {
+            victimPage = f;
+            break;
+          }
+
+          if (nextUse > farthestUse) {
+            farthestUse = nextUse;
+            victimPage = f;
+          }
+        }
+
+        evictedPage = victimPage;
+        const idx = frames.indexOf(victimPage);
+        frames[idx] = page;
+      }
+
+      steps.push({ accessPage: page, framesContent: [...frames], hit: false, evictedPage });
+    }
+
+    return { steps, faultCount, faultRate: accessSequence.length > 0 ? faultCount / accessSequence.length : 0, algorithm: 'OPT' };
+  }
+
+  analyzeFragments(memoryBlocks: MemoryBlock[]): FragmentAnalysis {
+    const freeBlocks = memoryBlocks.filter(b => b.isFree);
+    const totalFragmentSize = freeBlocks.reduce((sum, b) => sum + b.size, 0);
+    const freeBlockCount = freeBlocks.length;
+    const maxFreeBlockSize = freeBlocks.length > 0 ? Math.max(...freeBlocks.map(b => b.size)) : 0;
+    const nonMaxFragmentSize = totalFragmentSize - maxFreeBlockSize;
+    const fragmentationRate = totalFragmentSize > 0 ? nonMaxFragmentSize / totalFragmentSize : 0;
+
+    return { totalFragmentSize, freeBlockCount, maxFreeBlockSize, fragmentationRate };
+  }
+
+  compactMemory(memoryBlocks: MemoryBlock[], processSegments: ProcessSegmentInfo[]): { memoryBlocks: MemoryBlock[]; processSegments: ProcessSegmentInfo[] } {
+    const allocatedBlocks = memoryBlocks.filter(b => !b.isFree);
+    const totalFree = memoryBlocks.filter(b => b.isFree).reduce((sum, b) => sum + b.size, 0);
+
+    const newBlocks: MemoryBlock[] = [];
+    let currentAddress = 0;
+
+    for (const block of allocatedBlocks) {
+      newBlocks.push({
+        startAddress: currentAddress,
+        size: block.size,
+        processId: block.processId,
+        segmentName: block.segmentName,
+        isFree: false,
+      });
+      currentAddress += block.size;
+    }
+
+    if (totalFree > 0) {
+      newBlocks.push({
+        startAddress: currentAddress,
+        size: totalFree,
+        processId: null,
+        segmentName: null,
+        isFree: true,
+      });
+    }
+
+    const newProcessSegments = processSegments.map(ps => {
+      const newSegments: SegmentEntry[] = ps.segments.map(seg => {
+        const block = newBlocks.find(b => b.processId === ps.processId && b.segmentName === seg.segmentName);
+        return {
+          segmentName: seg.segmentName,
+          segmentLength: seg.segmentLength,
+          baseAddress: block ? block.startAddress : seg.baseAddress,
+        };
+      });
+      return { processId: ps.processId, segments: newSegments };
+    });
+
+    return { memoryBlocks: newBlocks, processSegments: newProcessSegments };
+  }
+
+  compareSnapshots(s1: FrameInfo[], pp1: ProcessPageInfo[], mb1: MemoryBlock[], ps1: ProcessSegmentInfo[],
+                   s2: FrameInfo[], pp2: ProcessPageInfo[], mb2: MemoryBlock[], ps2: ProcessSegmentInfo[]): SnapshotDiff {
+    const pids1 = new Set(pp1.map(p => p.processId));
+    const pids2 = new Set(pp2.map(p => p.processId));
+    const allPagingPids = new Set([...pids1, ...pids2]);
+
+    const pagingChangedProcessIds: number[] = [];
+    for (const pid of allPagingPids) {
+      const pp1Entry = pp1.find(p => p.processId === pid);
+      const pp2Entry = pp2.find(p => p.processId === pid);
+      if (!pp1Entry || !pp2Entry) {
+        pagingChangedProcessIds.push(pid);
+        continue;
+      }
+      if (pp1Entry.logicalPageCount !== pp2Entry.logicalPageCount ||
+          JSON.stringify(pp1Entry.pageTable) !== JSON.stringify(pp2Entry.pageTable)) {
+        pagingChangedProcessIds.push(pid);
+      }
+    }
+
+    const segPids1 = new Set(ps1.map(p => p.processId));
+    const segPids2 = new Set(ps2.map(p => p.processId));
+    const allSegPids = new Set([...segPids1, ...segPids2]);
+
+    const segmentationChangedProcessIds: number[] = [];
+    for (const pid of allSegPids) {
+      const ps1Entry = ps1.find(p => p.processId === pid);
+      const ps2Entry = ps2.find(p => p.processId === pid);
+      if (!ps1Entry || !ps2Entry) {
+        segmentationChangedProcessIds.push(pid);
+        continue;
+      }
+      if (JSON.stringify(ps1Entry.segments) !== JSON.stringify(ps2Entry.segments)) {
+        segmentationChangedProcessIds.push(pid);
+      }
+    }
+
+    const occupied1 = s1.filter(f => f.processId !== null).length;
+    const occupied2 = s2.filter(f => f.processId !== null).length;
+
+    const free1 = mb1.filter(b => b.isFree).reduce((sum, b) => sum + b.size, 0);
+    const free2 = mb2.filter(b => b.isFree).reduce((sum, b) => sum + b.size, 0);
+
+    return {
+      pagingChangedProcessIds,
+      segmentationChangedProcessIds,
+      frameOccupancyDiff: occupied2 - occupied1,
+      freeMemoryDiff: free2 - free1,
+    };
   }
 }

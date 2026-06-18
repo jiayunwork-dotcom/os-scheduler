@@ -50,3 +50,42 @@ export interface SegmentAddressTranslationStep {
   value: string;
   isError?: boolean;
 }
+
+export interface PageReplacementStep {
+  accessPage: number;
+  framesContent: number[];
+  hit: boolean;
+  evictedPage: number | null;
+}
+
+export interface PageReplacementResult {
+  steps: PageReplacementStep[];
+  faultCount: number;
+  faultRate: number;
+  algorithm: 'FIFO' | 'LRU' | 'OPT';
+}
+
+export interface FragmentAnalysis {
+  totalFragmentSize: number;
+  freeBlockCount: number;
+  maxFreeBlockSize: number;
+  fragmentationRate: number;
+}
+
+export interface MemorySnapshot {
+  name: string;
+  timestamp: Date;
+  frames: FrameInfo[];
+  processPages: ProcessPageInfo[];
+  memoryBlocks: MemoryBlock[];
+  processSegments: ProcessSegmentInfo[];
+  totalMemoryKB: number;
+  pageSizeKB: number;
+}
+
+export interface SnapshotDiff {
+  pagingChangedProcessIds: number[];
+  segmentationChangedProcessIds: number[];
+  frameOccupancyDiff: number;
+  freeMemoryDiff: number;
+}

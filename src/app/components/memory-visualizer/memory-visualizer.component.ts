@@ -11,6 +11,10 @@ import {
   SegmentEntry,
   MemoryBlock,
   SegmentAddressTranslationStep,
+  PageReplacementResult,
+  FragmentAnalysis,
+  MemorySnapshot,
+  SnapshotDiff,
 } from '../../models/memory.model';
 import { MemoryService } from '../../services/memory.service';
 
@@ -23,6 +27,7 @@ import { MemoryService } from '../../services/memory.service';
 })
 export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
   @Input() processes: Process[] = [];
+  @Input() completedProcessIds: number[] = [];
 
   isExpanded = true;
   activeTab: 'paging' | 'segmentation' = 'paging';
@@ -57,6 +62,21 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
   readonly memoryOptions = [64, 128, 256, 512, 1024];
   readonly pageSizeOptions = [1, 2, 4, 8];
 
+  replacementFrameLimit = 3;
+  replacementAccessSequence = '0,1,2,3,0,1,4,0,1,2,3,4';
+  replacementAlgorithm: 'FIFO' | 'LRU' | 'OPT' = 'FIFO';
+  replacementResult: PageReplacementResult | null = null;
+
+  fragmentAnalysis: FragmentAnalysis | null = null;
+
+  snapshots: MemorySnapshot[] = [];
+  snapshotNameCounter = 1;
+  selectedSnapshotIndex1: number | null = null;
+  selectedSnapshotIndex2: number | null = null;
+  snapshotDiff: SnapshotDiff | null = null;
+
+  pendingReclaimPids: Set<number> = new Set();
+
   constructor(private memoryService: MemoryService) {}
 
   ngOnInit(): void {
@@ -73,6 +93,46 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
     if (changes['processes']) {
       this.syncProcesses();
     }
+    if (changes['completedProcessIds']) {
+      this.updatePendingReclaims();
+    }
+  }
+
+  private updatePendingReclaims(): void {
+    for (const pid of this.completedProcessIds) {
+      if (!this.pendingReclaimPids.has(pid)) {
+        const hasPages = this.processPages.some(p => p.processId === pid);
+        const hasSegments = this.processSegments.some(p => p.processId === pid);
+        if (hasPages || hasSegments) {
+          this.pendingReclaimPids.add(pid);
+        }
+      }
+    }
+  }
+
+  isProcessTerminated(processId: number): boolean {
+    return this.completedProcessIds.includes(processId);
+  }
+
+  isProcessPendingReclaim(processId: number): boolean {
+    return this.pendingReclaimPids.has(processId);
+  }
+
+  reclaimTerminatedProcesses(): void {
+    for (const pid of this.pendingReclaimPids) {
+      const pageResult = this.memoryService.releaseProcessPages(pid, this.frames, this.processPages);
+      this.frames = pageResult.frames;
+      this.processPages = pageResult.processPages;
+
+      const segResult = this.memoryService.releaseProcessSegments(pid, this.memoryBlocks, this.processSegments);
+      this.memoryBlocks = segResult.memoryBlocks;
+      this.processSegments = segResult.processSegments;
+    }
+    this.pendingReclaimPids.clear();
+  }
+
+  get hasPendingReclaims(): boolean {
+    return this.pendingReclaimPids.size > 0;
   }
 
   private syncProcesses(): void {
@@ -85,6 +145,7 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
       const result = this.memoryService.releaseProcessPages(pid, this.frames, this.processPages);
       this.frames = result.frames;
       this.processPages = result.processPages;
+      this.pendingReclaimPids.delete(pid);
     }
 
     for (const pp of this.processPages) {
@@ -103,6 +164,7 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
       const result = this.memoryService.releaseProcessSegments(pid, this.memoryBlocks, this.processSegments);
       this.memoryBlocks = result.memoryBlocks;
       this.processSegments = result.processSegments;
+      this.pendingReclaimPids.delete(pid);
     }
 
     if (this.selectedProcessId !== null && !currentIds.includes(this.selectedProcessId)) {
@@ -154,12 +216,14 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
     this.frames = this.memoryService.initFrames(total);
     this.processPages = [];
     this.translationSteps = [];
+    this.replacementResult = null;
   }
 
   resetSegmentation(): void {
     this.memoryBlocks = this.memoryService.initMemoryBlocks(this.totalMemoryKB);
     this.processSegments = [];
     this.segTranslationSteps = [];
+    this.fragmentAnalysis = null;
   }
 
   getProcessById(id: number): Process | undefined {
@@ -224,6 +288,7 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
     const result = this.memoryService.releaseProcessPages(processId, this.frames, this.processPages);
     this.frames = result.frames;
     this.processPages = result.processPages;
+    this.pendingReclaimPids.delete(processId);
   }
 
   selectProcess(processId: number): void {
@@ -320,6 +385,7 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
     const result = this.memoryService.releaseProcessSegments(processId, this.memoryBlocks, this.processSegments);
     this.memoryBlocks = result.memoryBlocks;
     this.processSegments = result.processSegments;
+    this.pendingReclaimPids.delete(processId);
   }
 
   translateSegmentAddress(): void {
@@ -431,5 +497,188 @@ export class MemoryVisualizerComponent implements OnInit, OnChanges, OnDestroy {
   getProcessSegmentCount(processId: number): number {
     const info = this.processSegments.find((p) => p.processId === processId);
     return info ? info.segments.length : 0;
+  }
+
+  getReplacementMaxFrameLimit(): number {
+    const pInfo = this.processPages.find(p => p.processId === this.selectedProcessId);
+    if (!pInfo) return 2;
+    return Math.max(2, pInfo.logicalPageCount);
+  }
+
+  getReplacementMinFrameLimit(): number {
+    return 2;
+  }
+
+  startReplacementSimulation(): void {
+    const sequence = this.replacementAccessSequence
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s !== '')
+      .map(s => parseInt(s, 10))
+      .filter(n => !isNaN(n));
+
+    if (sequence.length === 0) {
+      alert('请输入有效的页面访问序列');
+      return;
+    }
+
+    const pInfo = this.processPages.find(p => p.processId === this.selectedProcessId);
+    if (!pInfo) {
+      alert('请先为当前进程分配页表');
+      return;
+    }
+
+    const totalPages = pInfo.logicalPageCount;
+    const frameLimit = Math.max(2, Math.min(this.replacementFrameLimit, totalPages));
+
+    switch (this.replacementAlgorithm) {
+      case 'FIFO':
+        this.replacementResult = this.memoryService.simulateFIFO(sequence, frameLimit, totalPages);
+        break;
+      case 'LRU':
+        this.replacementResult = this.memoryService.simulateLRU(sequence, frameLimit, totalPages);
+        break;
+      case 'OPT':
+        this.replacementResult = this.memoryService.simulateOPT(sequence, frameLimit, totalPages);
+        break;
+    }
+  }
+
+  analyzeFragments(): void {
+    this.fragmentAnalysis = this.memoryService.analyzeFragments(this.memoryBlocks);
+  }
+
+  canCompact(): boolean {
+    if (!this.fragmentAnalysis) return false;
+    return this.fragmentAnalysis.freeBlockCount > 1;
+  }
+
+  executeCompaction(): void {
+    const result = this.memoryService.compactMemory(this.memoryBlocks, this.processSegments);
+    this.memoryBlocks = result.memoryBlocks;
+    this.processSegments = result.processSegments;
+    this.fragmentAnalysis = this.memoryService.analyzeFragments(this.memoryBlocks);
+  }
+
+  saveSnapshot(): void {
+    if (this.snapshots.length >= 5) {
+      alert('快照已满（最多5个），请先删除旧快照');
+      return;
+    }
+
+    const snapshot: MemorySnapshot = {
+      name: `快照${this.snapshotNameCounter}`,
+      timestamp: new Date(),
+      frames: this.frames.map(f => ({ ...f })),
+      processPages: this.processPages.map(pp => ({
+        processId: pp.processId,
+        logicalPageCount: pp.logicalPageCount,
+        pageTable: pp.pageTable.map(e => ({ ...e })),
+      })),
+      memoryBlocks: this.memoryBlocks.map(b => ({ ...b })),
+      processSegments: this.processSegments.map(ps => ({
+        processId: ps.processId,
+        segments: ps.segments.map(s => ({ ...s })),
+      })),
+      totalMemoryKB: this.totalMemoryKB,
+      pageSizeKB: this.pageSizeKB,
+    };
+
+    this.snapshots.push(snapshot);
+    this.snapshotNameCounter++;
+  }
+
+  restoreSnapshot(index: number): void {
+    const snapshot = this.snapshots[index];
+    if (!snapshot) return;
+
+    this.totalMemoryKB = snapshot.totalMemoryKB;
+    this.pageSizeKB = snapshot.pageSizeKB;
+    this.frames = snapshot.frames.map(f => ({ ...f }));
+    this.processPages = snapshot.processPages.map(pp => ({
+      processId: pp.processId,
+      logicalPageCount: pp.logicalPageCount,
+      pageTable: pp.pageTable.map(e => ({ ...e })),
+    }));
+    this.memoryBlocks = snapshot.memoryBlocks.map(b => ({ ...b }));
+    this.processSegments = snapshot.processSegments.map(ps => ({
+      processId: ps.processId,
+      segments: ps.segments.map(s => ({ ...s })),
+    }));
+
+    this.translationSteps = [];
+    this.segTranslationSteps = [];
+    this.replacementResult = null;
+    this.fragmentAnalysis = null;
+  }
+
+  deleteSnapshot(index: number): void {
+    this.snapshots.splice(index, 1);
+    if (this.selectedSnapshotIndex1 !== null && this.selectedSnapshotIndex1 >= this.snapshots.length) {
+      this.selectedSnapshotIndex1 = null;
+    }
+    if (this.selectedSnapshotIndex2 !== null && this.selectedSnapshotIndex2 >= this.snapshots.length) {
+      this.selectedSnapshotIndex2 = null;
+    }
+    this.snapshotDiff = null;
+  }
+
+  toggleSnapshotSelection(index: number): void {
+    if (this.selectedSnapshotIndex1 === index) {
+      this.selectedSnapshotIndex1 = null;
+      this.snapshotDiff = null;
+      return;
+    }
+    if (this.selectedSnapshotIndex2 === index) {
+      this.selectedSnapshotIndex2 = null;
+      this.snapshotDiff = null;
+      return;
+    }
+    if (this.selectedSnapshotIndex1 === null) {
+      this.selectedSnapshotIndex1 = index;
+    } else if (this.selectedSnapshotIndex2 === null) {
+      this.selectedSnapshotIndex2 = index;
+    } else {
+      this.selectedSnapshotIndex1 = index;
+      this.selectedSnapshotIndex2 = null;
+      this.snapshotDiff = null;
+    }
+  }
+
+  compareSelectedSnapshots(): void {
+    if (this.selectedSnapshotIndex1 === null || this.selectedSnapshotIndex2 === null) return;
+    const s1 = this.snapshots[this.selectedSnapshotIndex1];
+    const s2 = this.snapshots[this.selectedSnapshotIndex2];
+    if (!s1 || !s2) return;
+
+    this.snapshotDiff = this.memoryService.compareSnapshots(
+      s1.frames, s1.processPages, s1.memoryBlocks, s1.processSegments,
+      s2.frames, s2.processPages, s2.memoryBlocks, s2.processSegments
+    );
+  }
+
+  isSnapshotSelected(index: number): boolean {
+    return this.selectedSnapshotIndex1 === index || this.selectedSnapshotIndex2 === index;
+  }
+
+  getProcessNameById(pid: number): string {
+    const proc = this.getProcessById(pid);
+    return proc ? proc.name : `P${pid}`;
+  }
+
+  isFramePendingReclaim(frame: FrameInfo): boolean {
+    return frame.processId !== null && this.pendingReclaimPids.has(frame.processId);
+  }
+
+  isBlockPendingReclaim(block: MemoryBlock): boolean {
+    return block.processId !== null && this.pendingReclaimPids.has(block.processId);
+  }
+
+  formatTimestamp(date: Date): string {
+    const d = new Date(date);
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const s = d.getSeconds().toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
   }
 }
